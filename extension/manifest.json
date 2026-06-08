@@ -1,0 +1,45 @@
+{
+  "manifest_version": 3,
+  "name": "1688 Product Collector",
+  "version": "0.1.0",
+  "description": "Collect product data from 1688 detail pages and export JSON aligned to the Mercado Libre template.",
+  "permissions": [
+    "activeTab",
+    "downloads",
+    "tabs"
+  ],
+  "host_permissions": [
+    "*://detail.1688.com/offer/*",
+    "*://*.alicdn.com/*",
+    "*://cloud.video.taobao.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "1688 Product Collector",
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://detail.1688.com/offer/*"
+      ],
+      "js": [
+        "field-definitions.js",
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "page-bridge.js"
+      ],
+      "matches": [
+        "https://detail.1688.com/*"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,132 @@
+:root {
+  color-scheme: light;
+  --bg: linear-gradient(180deg, #fff9ef 0%, #f6efe1 100%);
+  --panel: rgba(255, 255, 255, 0.86);
+  --border: rgba(93, 57, 24, 0.12);
+  --text: #2f2419;
+  --muted: #725b46;
+  --accent: #d56a1f;
+  --accent-strong: #b8520d;
+  --shadow: 0 18px 45px rgba(117, 72, 29, 0.14);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 360px;
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+}
+
+.panel {
+  padding: 18px;
+}
+
+.hero,
+.status-card,
+.result-card {
+  border: 1px solid var(--border);
+  background: var(--panel);
+  backdrop-filter: blur(10px);
+  border-radius: 18px;
+  box-shadow: var(--shadow);
+}
+
+.hero {
+  padding: 18px;
+  background:
+    radial-gradient(circle at top right, rgba(255, 168, 77, 0.26), transparent 34%),
+    var(--panel);
+}
+
+.eyebrow {
+  margin: 0 0 8px;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent-strong);
+}
+
+.hero h1 {
+  margin: 0;
+  font-size: 24px;
+}
+
+.subtitle {
+  margin: 10px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.status-card,
+.result-card {
+  margin-top: 14px;
+  padding: 14px 16px;
+}
+
+.status-label {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.status-text {
+  margin: 6px 0 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.collect-button {
+  width: 100%;
+  margin-top: 14px;
+  border: 0;
+  border-radius: 16px;
+  padding: 14px 16px;
+  background: linear-gradient(135deg, var(--accent) 0%, var(--accent-strong) 100%);
+  color: #fff;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 120ms ease, box-shadow 120ms ease, opacity 120ms ease;
+  box-shadow: 0 14px 28px rgba(181, 82, 13, 0.26);
+}
+
+.collect-button:hover {
+  transform: translateY(-1px);
+}
+
+.collect-button:disabled {
+  cursor: wait;
+  opacity: 0.72;
+  transform: none;
+}
+
+.result-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(93, 57, 24, 0.08);
+}
+
+.result-row:last-child {
+  border-bottom: 0;
+}
+
+.result-row span {
+  color: var(--muted);
+}
+
+.result-row strong {
+  text-align: right;
+  max-width: 210px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

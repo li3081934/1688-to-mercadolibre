@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>1688 Product Collector</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <main class="panel">
+      <section class="hero">
+        <p class="eyebrow">1688 to Mercado Libre</p>
+        <h1>采集当前商品</h1>
+        <p class="subtitle">在 1688 商品详情页点击按钮，导出主 JSON、SKU JSON 与图片 ZIP 包。</p>
+      </section>
+
+      <section class="status-card">
+        <p class="status-label">当前状态</p>
+        <p id="statusText" class="status-text">等待采集</p>
+      </section>
+
+      <button id="collectButton" class="collect-button" type="button">采集并下载 ZIP</button>
+
+      <section class="result-card">
+        <div class="result-row">
+          <span>标题</span>
+          <strong id="titleText">-</strong>
+        </div>
+        <div class="result-row">
+          <span>已填字段</span>
+          <strong id="filledCountText">0</strong>
+        </div>
+        <div class="result-row">
+          <span>图片数</span>
+          <strong id="imageCountText">0</strong>
+        </div>
+      </section>
+    </main>
+
+    <script src="vendor/jszip.min.js"></script>
+    <script src="popup.js"></script>
+  </body>
+</html>
