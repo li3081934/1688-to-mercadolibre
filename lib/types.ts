@@ -5,11 +5,83 @@ export type TemplateField = {
   value?: string | number | null;
 };
 
+export type LabelValuePair = {
+  label: string;
+  value: string;
+};
+
+export type StructuredTable = {
+  title?: string;
+  headers?: string[];
+  rows: string[][];
+  text?: string;
+};
+
+export type DetailBlock =
+  | {
+      type: "text";
+      text: string;
+    }
+  | {
+      type: "image";
+      url: string;
+    };
+
+export type DetailPayload = {
+  url?: string;
+  html?: string;
+  text?: string;
+  images?: string[];
+  blocks?: DetailBlock[];
+  error?: string;
+};
+
+export type PackageInfo = {
+  unitWeight?: string;
+  summary?: LabelValuePair[];
+  tables?: StructuredTable[];
+};
+
+export type ProductPayload = {
+  title?: string;
+  offerId?: string;
+  companyName?: string;
+  price?: string;
+  description?: string;
+  images?: string[];
+  detailUrl?: string;
+};
+
+export type SkuPayload = {
+  skuId?: string;
+  specId?: string;
+  specAttrs?: string;
+  options?: string[];
+  price?: string;
+  stock?: string;
+  images?: string[];
+  packageInfo?: {
+    weight?: string;
+    weightUnit?: string;
+    length?: string;
+    width?: string;
+    height?: string;
+    sizeUnit?: string;
+  };
+};
+
 export type ExportJsonRecord = {
   generatedAt?: string;
   source?: Record<string, unknown>;
+  product?: ProductPayload;
+  attributes?: LabelValuePair[];
+  packageInfo?: PackageInfo;
+  detail?: DetailPayload;
+  sku?: SkuPayload;
+  skuPackages?: SkuPayload[];
+  collectionWarnings?: string[];
   fields?: Record<string, unknown>;
-  templateFields: TemplateField[];
+  templateFields?: TemplateField[];
   raw?: Record<string, unknown>;
 };
 
@@ -55,13 +127,14 @@ export type ParsedSkuItem = {
   skuId: string;
   label: string;
   imageUrl: string | null;
-  jsonPath: string;
+  jsonPath: string | null;
   product: ExportJsonRecord;
 };
 
 export type ParsedProductBundle = {
   mainJsonPath: string;
   mainProduct: ExportJsonRecord;
+  detailJsonPath: string | null;
   skuJsonPaths: string[];
   skuProducts: ExportJsonRecord[];
   skuItems: ParsedSkuItem[];

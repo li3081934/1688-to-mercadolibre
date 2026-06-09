@@ -2,5 +2,8 @@ node_modules/
 output/
 .next/
 storage/
+.env
+.env.local
+.env.*.local
 *.tsbuildinfo
 docs/

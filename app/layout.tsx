@@ -29,6 +29,9 @@ export default function RootLayout({ children }: { children: ReactNode }) {
               <Link href="/products" className="nav-link">
                 商品管理
               </Link>
+              <Link href="/mercadolibre" className="nav-link">
+                美客多集成
+              </Link>
             </nav>
           </header>
           {children}

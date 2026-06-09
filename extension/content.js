@@ -52,10 +52,20 @@ function normalizeImageUrl(url) {
   }
 
   return url
+    .replace(/^\\?['\"]+|\\?['\"]+$/g, "")
     .replace(/^\/\//, "https://")
+    .replace(/\.jpg_sum\.jpg.*$/i, ".jpg")
+    .replace(/\.png_sum\.jpg.*$/i, ".png")
+    .replace(/_sum\.jpg.*$/i, "")
     .replace(/\.([0-9]+)x([0-9]+)\.jpg.*$/i, ".jpg")
     .replace(/_[0-9]+x[0-9]+\.jpg.*$/i, ".jpg")
     .replace(/\.jpg_\.webp$/i, ".jpg");
+}
+
+const PACKAGE_KEYWORDS = ["包装", "箱装", "装箱", "重量", "件重", "毛重", "净重", "尺寸", "长", "宽", "高", "体积"];
+
+function hasPackageKeyword(value) {
+  return PACKAGE_KEYWORDS.some((keyword) => String(value || "").includes(keyword));
 }
 
 function parseJsonSafely(value) {
@@ -173,19 +183,34 @@ function collectSpecPairs() {
 
   const tableRows = document.querySelectorAll("table tr, .offer-attr-list tr, .od-attribute-table tr");
   for (const row of tableRows) {
-    const cells = row.querySelectorAll("th, td");
+    const tableTitle = normalizeWhitespace(
+      row
+        .closest("table")
+        ?.closest("section, .module-od-product-pack-info, .module-od-product-attributes, .detail-content, .tab-content-container")
+        ?.querySelector("h2, h3, h4, .title, .module-title, .feature-item-label")
+        ?.textContent || ""
+    );
+    if (hasPackageKeyword(tableTitle)) {
+      continue;
+    }
+
+    const cells = Array.from(row.querySelectorAll("th, td"))
+      .map((cell) => normalizeWhitespace(cell.textContent || ""))
+      .filter(Boolean);
     if (cells.length < 2) {
       continue;
     }
 
-    const key = normalizeWhitespace(cells[0].textContent || "");
-    const value = normalizeWhitespace(Array.from(cells).slice(1).map((cell) => cell.textContent || "").join(" "));
-    if (key && value) {
-      pairs.push([key, value]);
+    for (let index = 0; index + 1 < cells.length; index += 2) {
+      const key = cells[index];
+      const value = cells[index + 1];
+      if (key && value) {
+        pairs.push([key, value]);
+      }
     }
   }
 
-  const definitionRows = document.querySelectorAll("dl, .detail-attributes-item, .od-attribute-item, li");
+  const definitionRows = document.querySelectorAll("dl, .detail-attributes-item, .od-attribute-item");
   for (const row of definitionRows) {
     const keyElement = row.querySelector("dt, .label, .name, .attr-name, .key");
     const valueElement = row.querySelector("dd, .value, .attr-value, .val");
@@ -197,6 +222,188 @@ function collectSpecPairs() {
   }
 
   return pairs;
+}
+
+function dedupeLabelValueEntries(entries) {
+  const seen = new Set();
+
+  return entries.filter((entry) => {
+    const label = normalizeWhitespace(entry?.label || "");
+    const value = normalizeWhitespace(entry?.value || "");
+    if (!label || !value) {
+      return false;
+    }
+
+    const signature = `${label}::${value}`;
+    if (seen.has(signature)) {
+      return false;
+    }
+
+    seen.add(signature);
+    return true;
+  });
+}
+
+function buildAttributeEntries(specPairs) {
+  return dedupeLabelValueEntries(
+    specPairs.map(([label, value]) => ({
+      label,
+      value
+    }))
+  );
+}
+
+function extractTableData(table) {
+  const rows = [];
+  const headerSet = new Set();
+
+  for (const row of table.querySelectorAll("tr")) {
+    const cells = Array.from(row.querySelectorAll("th, td"))
+      .map((cell) => normalizeWhitespace(cell.textContent || ""))
+      .filter(Boolean);
+
+    if (!cells.length) {
+      continue;
+    }
+
+    const thCount = row.querySelectorAll("th").length;
+    const tdCount = row.querySelectorAll("td").length;
+    if (!rows.length && thCount >= 2 && tdCount === 0) {
+      cells.forEach((cell) => headerSet.add(cell));
+      continue;
+    }
+
+    rows.push(cells);
+  }
+
+  const title = normalizeWhitespace(
+    table.closest("section, .module-od-product-pack-info, .module-od-product-attributes, .detail-content, .tab-content-container")
+      ?.querySelector("h2, h3, h4, .title, .module-title, .feature-item-label")
+      ?.textContent || ""
+  );
+  const text = normalizeWhitespace(table.textContent || "");
+
+  return {
+    title,
+    headers: Array.from(headerSet),
+    rows,
+    text
+  };
+}
+
+function getPackageSignalScore(tableData) {
+  const cells = [tableData.title, ...(tableData.headers || []), ...tableData.rows.flat()]
+    .map((cell) => normalizeWhitespace(cell))
+    .filter(Boolean);
+
+  if (!cells.length) {
+    return 0;
+  }
+
+  return cells.filter((cell) => hasPackageKeyword(cell)).length / cells.length;
+}
+
+function isPackageTable(tableData) {
+  return hasPackageKeyword(tableData.title) || getPackageSignalScore(tableData) >= 0.2;
+}
+
+function collectPackageTables() {
+  const seen = new Set();
+  const tables = [];
+
+  for (const table of document.querySelectorAll("table")) {
+    const parsed = extractTableData(table);
+    if (!parsed.rows.length && !parsed.headers.length) {
+      continue;
+    }
+
+    if (!isPackageTable(parsed)) {
+      continue;
+    }
+
+    const signature = JSON.stringify(parsed);
+    if (seen.has(signature)) {
+      continue;
+    }
+
+    seen.add(signature);
+    tables.push(parsed);
+  }
+
+  return tables;
+}
+
+function buildStructuredPackageTable(structuredData) {
+  const pieceWeightScaleInfo = structuredData?.productPackInfo?.pieceWeightScale?.pieceWeightScaleInfo || [];
+  if (!Array.isArray(pieceWeightScaleInfo) || !pieceWeightScaleInfo.length) {
+    return null;
+  }
+
+  return {
+    title: "SKU 包装信息",
+    headers: ["SKU", "规格", "重量(g)", "长(cm)", "宽(cm)", "高(cm)", "体积"],
+    rows: pieceWeightScaleInfo.map((item) => [
+      String(item?.skuId || ""),
+      normalizeWhitespace([item?.sku1, item?.sku2, item?.sku3].filter(Boolean).join(" / ")),
+      item?.weight || item?.weight === 0 ? String(item.weight) : "",
+      item?.length || item?.length === 0 ? String(item.length) : "",
+      item?.width || item?.width === 0 ? String(item.width) : "",
+      item?.height || item?.height === 0 ? String(item.height) : "",
+      item?.volume || item?.volume === 0 ? String(item.volume) : ""
+    ])
+  };
+}
+
+function collectPackageInfo(specPairs, structuredData) {
+  const attributeEntries = buildAttributeEntries(specPairs);
+  const summary = attributeEntries.filter((entry) => hasPackageKeyword(entry.label));
+  const tables = collectPackageTables();
+  const structuredTable = buildStructuredPackageTable(structuredData);
+
+  if (structuredTable) {
+    tables.push(structuredTable);
+  }
+
+  return {
+    unitWeight: structuredData?.productPackInfo?.unitWeight ? String(structuredData.productPackInfo.unitWeight) : "",
+    summary,
+    tables
+  };
+}
+
+function collectSkuImageMap() {
+  const imageMap = new Map();
+  const selectors = [
+    ".module-od-sku-selection .expand-view-item",
+    ".module-od-sku-selection .sku-item",
+    "[class*='sku-selection'] .expand-view-item",
+    "[class*='sku-selection'] .sku-item"
+  ];
+
+  for (const selector of selectors) {
+    const items = document.querySelectorAll(selector);
+    for (const item of items) {
+      const label = normalizeWhitespace(
+        item.querySelector(".item-label, [title], .label, .name")?.textContent || item.getAttribute("title") || item.textContent || ""
+      )
+        .replace(/¥\s*\d+(?:\.\d+)?/g, "")
+        .replace(/库存\s*\d+\s*个?/g, "")
+        .trim();
+      const imageUrl = normalizeImageUrl(
+        item.querySelector("img")?.getAttribute("data-src") || item.querySelector("img")?.getAttribute("src") || ""
+      );
+
+      if (label && imageUrl && !imageMap.has(label)) {
+        imageMap.set(label, imageUrl);
+      }
+    }
+
+    if (imageMap.size) {
+      break;
+    }
+  }
+
+  return imageMap;
 }
 
 function buildSpecMap(pairs) {
@@ -403,9 +610,30 @@ function buildExportPayload(generatedAt, source, record, raw) {
   return {
     generatedAt,
     source,
-    fields: record,
-    templateFields: buildTemplateFieldEntries(record),
-    raw
+    product: {
+      title: source.title,
+      offerId: source.offerId,
+      companyName: source.companyName,
+      price: source.price,
+      detailUrl: source.detailUrl
+    },
+    sku: {
+      skuId: source.skuId,
+      specId: source.specId,
+      specAttrs: source.specAttrs,
+      options: source.variantOptions,
+      price: record.price_mexico,
+      stock: record.stock,
+      images: raw.images,
+      packageInfo: {
+        weight: record.package_weight,
+        weightUnit: record.package_weight_unit,
+        length: record.package_length,
+        width: record.package_width,
+        height: record.package_height,
+        sizeUnit: record.package_dimension_unit
+      }
+    }
   };
 }
 
@@ -436,8 +664,11 @@ function buildSkuPackages({
   source,
   baseRecord,
   images,
+  attributes,
+  packageInfo,
   specPairs,
   specMap,
+  skuImageMap,
   structuredData,
   measurements
 }) {
@@ -463,6 +694,15 @@ function buildSkuPackages({
       .filter(Boolean);
     const pieceInfo = measurementsBySkuId.get(skuId) || null;
     const packageMeasurements = buildPackageMeasurements(pieceInfo, measurements);
+    const matchedImages = options
+      .map((option) => skuImageMap.get(option) || "")
+      .map((url) => normalizeImageUrl(url))
+      .filter(Boolean);
+    const fallbackImage = normalizeImageUrl(images[index] || images[0] || "");
+    const packageImages = Array.from(new Set(matchedImages)).slice(0, 1);
+    if (!packageImages.length && fallbackImage) {
+      packageImages.push(fallbackImage);
+    }
     const packageRecord = {
       ...baseRecord,
       sku: skuId,
@@ -486,12 +726,23 @@ function buildSkuPackages({
       variantOptions: options
     });
     const exportData = buildExportPayload(generatedAt, packageSource, packageRecord, {
-      images,
+      images: packageImages,
+      attributes,
+      packageInfo,
       specPairs,
       specMap,
       skuEntry,
       pieceInfo
     });
+
+    const skuPackageInfo = {
+      weight: packageMeasurements.packageWeight,
+      weightUnit: packageMeasurements.weightUnit,
+      length: packageMeasurements.packageLength,
+      width: packageMeasurements.packageWidth,
+      height: packageMeasurements.packageHeight,
+      sizeUnit: packageMeasurements.sizeUnit
+    };
 
     return {
       skuId,
@@ -500,7 +751,8 @@ function buildSkuPackages({
       options,
       price: packageRecord.price_mexico,
       stock: packageRecord.stock,
-      images,
+      images: packageImages,
+      packageInfo: skuPackageInfo,
       folderName: fileBaseName,
       jsonFileName: `${fileBaseName}.json`,
       exportData
@@ -510,48 +762,50 @@ function buildSkuPackages({
 
 function buildFieldRecord() {
   const generatedAt = new Date().toISOString();
-  const record = createEmptyFieldRecord();
   const offerId = String(window.location.href.match(/\/offer\/([^./?#]+)/i)?.[1] || "");
   const specPairs = collectSpecPairs();
   const specMap = buildSpecMap(specPairs);
   const structuredData = getStructuredPageData();
   const title = inferTitle(specMap);
   const images = collectImages();
+  const attributes = buildAttributeEntries(specPairs);
+  const packageInfo = collectPackageInfo(specPairs, structuredData);
+  const skuImageMap = collectSkuImageMap();
   const description = normalizeWhitespace(inferDescription(title));
   const measurements = inferMeasurements(specMap);
   const companyName = structuredData?.productTitle?.shopInfo?.companyName || "";
-
-  record.title = title;
-  record.title_character_count = title.length ? String(title.length) : "";
-  record.sku = inferSku(specMap, offerId);
-  record.pictures = images.join("; ");
-  record.stock = inferStock(specMap);
-  record.description = description;
-  record.brand = inferStructuredBrand(specMap) || inferBrand(title, specMap);
-  record.model = inferModel(specMap);
-  record.package_weight = measurements.packageWeight;
-  record.package_weight_unit = measurements.weightUnit;
-  record.package_length = measurements.packageLength;
-  record.package_width = measurements.packageWidth;
-  record.package_height = measurements.packageHeight;
-  record.package_dimension_unit = measurements.sizeUnit;
-  record.price_mexico = inferPrice(specMap);
+  const baseRecord = {
+    stock: inferStock(specMap),
+    model: inferModel(specMap),
+    price_mexico: inferPrice(specMap),
+    description,
+    package_weight: measurements.packageWeight,
+    package_weight_unit: measurements.weightUnit,
+    package_length: measurements.packageLength,
+    package_width: measurements.packageWidth,
+    package_height: measurements.packageHeight,
+    package_dimension_unit: measurements.sizeUnit
+  };
 
   const source = {
     marketplace: "1688",
     url: window.location.href,
     title,
     offerId,
-    price: record.price_mexico,
-    companyName
+    price: baseRecord.price_mexico,
+    companyName,
+    detailUrl: structuredData?.description?.detailUrl || ""
   };
   const skuPackages = buildSkuPackages({
     generatedAt,
     source,
-    baseRecord: record,
+    baseRecord,
     images,
+    attributes,
+    packageInfo,
     specPairs,
     specMap,
+    skuImageMap,
     structuredData,
     measurements
   });
@@ -562,15 +816,34 @@ function buildFieldRecord() {
       ...source,
       skuPackageCount: skuPackages.length
     },
-    fields: record,
-    templateFields: buildTemplateFieldEntries(record),
-    skuPackages,
-    raw: {
+    product: {
+      title,
+      offerId,
+      companyName,
+      price: baseRecord.price_mexico,
+      description,
       images,
-      specPairs,
-      specMap,
-      structuredData
-    }
+      detailUrl: structuredData?.description?.detailUrl || ""
+    },
+    attributes,
+    packageInfo,
+    detail: {
+      url: structuredData?.description?.detailUrl || "",
+      blocks: [],
+      images: [],
+      text: "",
+      html: ""
+    },
+    skuPackages: skuPackages.map((skuPackage) => ({
+      skuId: skuPackage.skuId,
+      specId: skuPackage.specId,
+      specAttrs: skuPackage.specAttrs,
+      options: skuPackage.options,
+      price: skuPackage.price,
+      stock: skuPackage.stock,
+      images: skuPackage.images,
+      packageInfo: skuPackage.packageInfo
+    }))
   };
 }
 

@@ -39,12 +39,13 @@ export async function POST(request: Request) {
 
     const bundle = await parseProductBundle(extractedDir);
     const source = bundle.mainProduct.source || {};
+    const productPayload = bundle.mainProduct.product || {};
     const now = new Date().toISOString();
     createProduct({
       id: productId,
       categoryId,
-      title: String(source.title || "未命名商品"),
-      offerId: String(source.offerId || source.url || productId),
+      title: String(productPayload.title || source.title || "未命名商品"),
+      offerId: String(productPayload.offerId || source.offerId || source.url || productId),
       zipPath,
       extractedDir,
       mainJsonPath: bundle.mainJsonPath,
@@ -57,7 +58,7 @@ export async function POST(request: Request) {
       updatedAt: now
     });
 
-    return redirectWithMessage(request, "/products", "success", "商品 ZIP 已上传并解压。");
+    return redirectWithMessage(request, "/products", "success", "商品 ZIP 已上传并建档。");
   } catch (error) {
     await removeDirectory(productDir);
     return redirectWithMessage(

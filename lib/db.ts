@@ -5,6 +5,7 @@ import Database from "better-sqlite3";
 
 import { getDatabasePath } from "@/lib/storage";
 import type { CategoryRecord, ProductListItem, ProductRecord } from "@/lib/types";
+import type { MLAccount } from "@/lib/mercadolibre/types";
 
 let database: Database.Database | null = null;
 
@@ -27,6 +28,18 @@ function openDatabase() {
       templatePath TEXT NOT NULL,
       mapperPath TEXT NOT NULL,
       isActive INTEGER NOT NULL DEFAULT 1,
+      createdAt TEXT NOT NULL,
+      updatedAt TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS ml_accounts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      mlUserId INTEGER NOT NULL UNIQUE,
+      siteId TEXT NOT NULL,
+      accessToken TEXT NOT NULL,
+      refreshToken TEXT NOT NULL,
+      tokenExpiresAt TEXT NOT NULL,
+      nickname TEXT NOT NULL DEFAULT '',
       createdAt TEXT NOT NULL,
       updatedAt TEXT NOT NULL
     );
@@ -203,4 +216,47 @@ export function deleteProduct(productId: string) {
   getDb()
     .prepare("DELETE FROM products WHERE id = ?")
     .run(productId);
+}
+
+// ---- Mercado Libre 账号 ----
+
+export function getMLAccount(): MLAccount | undefined {
+  return getDb()
+    .prepare("SELECT * FROM ml_accounts ORDER BY id DESC LIMIT 1")
+    .get() as MLAccount | undefined;
+}
+
+export function saveMLAccount(account: Omit<MLAccount, "id">) {
+  getDb()
+    .prepare(
+      `INSERT INTO ml_accounts (mlUserId, siteId, accessToken, refreshToken, tokenExpiresAt, nickname, createdAt, updatedAt)
+       VALUES (@mlUserId, @siteId, @accessToken, @refreshToken, @tokenExpiresAt, @nickname, @createdAt, @updatedAt)`
+    )
+    .run(account);
+}
+
+export function updateMLAccount(mlUserId: number, patch: { accessToken?: string; refreshToken?: string; tokenExpiresAt?: string }) {
+  const current = getDb()
+    .prepare("SELECT * FROM ml_accounts WHERE mlUserId = ?")
+    .get(mlUserId) as MLAccount | undefined;
+
+  if (!current) {
+    throw new Error("ML 账号不存在。");
+  }
+
+  getDb()
+    .prepare(
+      `UPDATE ml_accounts
+       SET accessToken = @accessToken,
+           refreshToken = @refreshToken,
+           tokenExpiresAt = @tokenExpiresAt,
+           updatedAt = @updatedAt
+       WHERE mlUserId = @mlUserId`
+    )
+    .run({
+      ...current,
+      ...patch,
+      mlUserId,
+      updatedAt: new Date().toISOString(),
+    });
 }

@@ -11,6 +11,7 @@
   "host_permissions": [
     "*://detail.1688.com/offer/*",
     "*://*.alicdn.com/*",
+    "*://itemcdn.tmall.com/*",
     "*://cloud.video.taobao.com/*"
   ],
   "background": {

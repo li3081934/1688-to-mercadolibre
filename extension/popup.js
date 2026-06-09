@@ -4,6 +4,46 @@ const filledCountText = document.getElementById("filledCountText");
 const imageCountText = document.getElementById("imageCountText");
 const collectButton = document.getElementById("collectButton");
 
+function normalizeWhitespace(value) {
+  return String(value || "").replace(/\s+/g, " ").trim();
+}
+
+function parseJsonSafely(value) {
+  try {
+    return JSON.parse(value);
+  } catch {
+    return null;
+  }
+}
+
+function decodeHtmlEntities(value) {
+  const textarea = document.createElement("textarea");
+  textarea.innerHTML = String(value || "");
+  return textarea.value;
+}
+
+function normalizeCollectedImageUrl(url) {
+  return String(url || "")
+    .trim()
+    .replace(/^\\?['\"]+|\\?['\"]+$/g, "")
+    .replace(/^\/\//, "https://");
+}
+
+function ensureWarnings(data) {
+  if (!Array.isArray(data.collectionWarnings)) {
+    data.collectionWarnings = [];
+  }
+
+  return data.collectionWarnings;
+}
+
+function addWarning(data, message) {
+  const warnings = ensureWarnings(data);
+  if (!warnings.includes(message)) {
+    warnings.push(message);
+  }
+}
+
 async function getActiveTab() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   return tab;
@@ -67,6 +107,183 @@ function buildMediaFileName(url, index, contentType) {
   }
 }
 
+function getDetailPayload(data) {
+  if (data?.detail && typeof data.detail === "object") {
+    return data.detail;
+  }
+
+  if (data?.raw?.detail && typeof data.raw.detail === "object") {
+    return data.raw.detail;
+  }
+
+  return null;
+}
+
+function getAllImageUrls(data) {
+  const productImages = Array.isArray(data?.product?.images) ? data.product.images : [];
+  const skuImages = Array.isArray(data?.skuPackages)
+    ? data.skuPackages.flatMap((item) => Array.isArray(item?.images) ? item.images : [])
+    : [];
+  const detailImages = Array.isArray(getDetailPayload(data)?.images) ? getDetailPayload(data).images : [];
+  return Array.from(new Set([...productImages, ...skuImages, ...detailImages].map((item) => normalizeCollectedImageUrl(item)).filter(Boolean)));
+}
+
+async function fetchTextAsset(url) {
+  const response = await fetch(url, {
+    credentials: "omit"
+  });
+
+  if (!response.ok) {
+    throw new Error(`下载详情失败：${response.status} ${response.statusText}`);
+  }
+
+  return response.text();
+}
+
+function extractImageUrlFromElement(element) {
+  const candidates = [
+    element.getAttribute("data-src"),
+    element.getAttribute("data-lazyload-src"),
+    element.getAttribute("data-lazy-src"),
+    element.getAttribute("src")
+  ];
+
+  return candidates.map((value) => normalizeCollectedImageUrl(value)).find(Boolean) || "";
+}
+
+function extractDetailHtml(rawText) {
+  const normalized = String(rawText || "").trim();
+  if (!normalized) {
+    return "";
+  }
+
+  const matched = normalized.match(/var\s+offer_details\s*=\s*(\{[\s\S]*\})\s*;?$/);
+  if (!matched) {
+    return normalized;
+  }
+
+  const parsed = parseJsonSafely(matched[1]);
+  if (!parsed || typeof parsed.content !== "string") {
+    return normalized;
+  }
+
+  return decodeHtmlEntities(parsed.content)
+    .replace(/\\&quot;/g, '"')
+    .replace(/&quot;/g, '"')
+    .replace(/\\\//g, "/");
+}
+
+function extractImageUrlsFromText(text) {
+  return Array.from(
+    new Set(Array.from(String(text || "").matchAll(/https?:\/\/[^\s"'\\<>]+/g)).map((match) => normalizeCollectedImageUrl(match[0])))
+  );
+}
+
+function collectDetailBlocks(root) {
+  const blocks = [];
+
+  function pushText(text) {
+    const normalized = normalizeWhitespace(text);
+    if (!normalized) {
+      return;
+    }
+
+    const previous = blocks.at(-1);
+    if (previous?.type === "text") {
+      previous.text = `${previous.text}\n${normalized}`;
+      return;
+    }
+
+    blocks.push({ type: "text", text: normalized });
+  }
+
+  function walk(node) {
+    if (!node) {
+      return;
+    }
+
+    if (node.nodeType === Node.TEXT_NODE) {
+      pushText(node.textContent || "");
+      return;
+    }
+
+    if (node.nodeType !== Node.ELEMENT_NODE) {
+      return;
+    }
+
+    const element = node;
+    const tagName = element.tagName.toLowerCase();
+    if (["script", "style", "noscript", "meta", "link"].includes(tagName)) {
+      return;
+    }
+
+    if (tagName === "img") {
+      const url = extractImageUrlFromElement(element);
+      if (url) {
+        blocks.push({ type: "image", url });
+      }
+      return;
+    }
+
+    for (const child of element.childNodes) {
+      walk(child);
+    }
+  }
+
+  walk(root);
+  return blocks;
+}
+
+function parseDetailHtml(html, url) {
+  const detailHtml = extractDetailHtml(html);
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(detailHtml, "text/html");
+
+  doc.querySelectorAll("script, style, noscript").forEach((element) => element.remove());
+
+  const body = doc.body || doc.documentElement;
+  const images = Array.from(body.querySelectorAll("img"))
+    .map((element) => extractImageUrlFromElement(element))
+    .concat(extractImageUrlsFromText(detailHtml))
+    .filter(Boolean);
+  const blocks = collectDetailBlocks(body);
+  const text = blocks
+    .filter((block) => block.type === "text")
+    .map((block) => block.text)
+    .join("\n")
+    .trim();
+
+  return {
+    url,
+    html: body.innerHTML || detailHtml,
+    text,
+    images: Array.from(new Set(images.map((item) => normalizeCollectedImageUrl(item)).filter(Boolean))),
+    blocks: blocks.map((block) => block.type === "image" ? { ...block, url: normalizeCollectedImageUrl(block.url) } : block)
+  };
+}
+
+async function enrichDetailPayload(data) {
+  const detailUrl = String(data?.detail?.url || data?.product?.detailUrl || data?.source?.detailUrl || "").trim();
+  if (!detailUrl) {
+    return data;
+  }
+
+  try {
+    const html = await fetchTextAsset(detailUrl);
+    const detail = parseDetailHtml(html, detailUrl);
+    data.detail = detail;
+  } catch (error) {
+    data.detail = {
+      ...(data.detail || {}),
+      url: detailUrl,
+      error: error instanceof Error ? error.message : "详情抓取失败。"
+    };
+    addWarning(data, `详情抓取失败：${detailUrl}`);
+  }
+
+  return data;
+}
+
 function getSkuPackages(data) {
   return Array.isArray(data?.skuPackages) ? data.skuPackages : [];
 }
@@ -86,16 +303,14 @@ function getSharedImageUrls(skuPackages) {
   return allShared ? firstImages : [];
 }
 
-function countFilledFields(fields) {
-  return Object.entries(fields).filter(([key, value]) => key !== "__labels" && String(value || "").trim()).length;
-}
 
 async function requestCollection(tabId) {
   return chrome.tabs.sendMessage(tabId, { type: "COLLECT_1688_PRODUCT" });
 }
 
 async function fetchAsset(url) {
-  const response = await fetch(url, {
+  const normalizedUrl = normalizeCollectedImageUrl(url);
+  const response = await fetch(normalizedUrl, {
     credentials: "omit"
   });
 
@@ -110,7 +325,7 @@ async function fetchAsset(url) {
   };
 }
 
-async function addImagesToZip(folder, imageUrls, assetCache) {
+async function addImagesToZip(folder, imageUrls, assetCache, data, bucketLabel) {
   if (!imageUrls.length) {
     return 0;
   }
@@ -119,7 +334,7 @@ async function addImagesToZip(folder, imageUrls, assetCache) {
   let addedCount = 0;
 
   for (let index = 0; index < imageUrls.length; index += 1) {
-    const imageUrl = imageUrls[index];
+    const imageUrl = normalizeCollectedImageUrl(imageUrls[index]);
     if (!imageUrl) {
       continue;
     }
@@ -128,12 +343,36 @@ async function addImagesToZip(folder, imageUrls, assetCache) {
       assetCache.set(imageUrl, fetchAsset(imageUrl));
     }
 
-    const asset = await assetCache.get(imageUrl);
-    imagesFolder.file(buildMediaFileName(imageUrl, index, asset.contentType), asset.blob);
-    addedCount += 1;
+    try {
+      const asset = await assetCache.get(imageUrl);
+      imagesFolder.file(buildMediaFileName(imageUrl, index, asset.contentType), asset.blob);
+      addedCount += 1;
+    } catch (error) {
+      assetCache.delete(imageUrl);
+      addWarning(
+        data,
+        `${bucketLabel || "图片"}下载失败：${imageUrl}${error instanceof Error && error.message ? ` (${error.message})` : ""}`
+      );
+    }
   }
 
   return addedCount;
+}
+
+async function addDetailToZip(rootFolder, data, assetCache) {
+  const detail = getDetailPayload(data);
+  if (!detail) {
+    return 0;
+  }
+
+  const detailFolder = rootFolder.folder("detail");
+  detailFolder.file("detail.json", JSON.stringify(detail, null, 2));
+
+  if (detail.html) {
+    detailFolder.file("detail.html", String(detail.html));
+  }
+
+  return addImagesToZip(detailFolder, Array.isArray(detail.images) ? detail.images : [], assetCache, data, "详情图片");
 }
 
 async function downloadZipPackage(data, filenameBase) {
@@ -149,11 +388,11 @@ async function downloadZipPackage(data, filenameBase) {
   const sharedImageUrls = getSharedImageUrls(skuPackages);
   const sharedImagesFolder = sharedImageUrls.length ? rootFolder.folder("shared-images") : null;
 
-  rootFolder.file(`${sanitizePathSegment(filenameBase, "1688-product")}.json`, JSON.stringify(data, null, 2));
-
   if (sharedImagesFolder) {
-    await addImagesToZip(sharedImagesFolder, sharedImageUrls, assetCache);
+    await addImagesToZip(sharedImagesFolder, sharedImageUrls, assetCache, data, "共享图片");
   }
+
+  await addDetailToZip(rootFolder, data, assetCache);
 
   if (skuPackages.length) {
     const skuRootFolder = rootFolder.folder("skus");
@@ -161,15 +400,21 @@ async function downloadZipPackage(data, filenameBase) {
     for (const skuPackage of skuPackages) {
       const folderName = sanitizePathSegment(skuPackage.folderName || skuPackage.skuId, skuPackage.skuId || "sku");
       const skuFolder = skuRootFolder.folder(folderName);
-      const jsonFileName = sanitizePathSegment((skuPackage.jsonFileName || `${folderName}.json`).replace(/\.json$/i, ""), folderName);
-      skuFolder.file(`${jsonFileName}.json`, JSON.stringify(skuPackage.exportData || skuPackage, null, 2));
 
       if (!sharedImageUrls.length) {
-        await addImagesToZip(skuFolder, Array.isArray(skuPackage.images) ? skuPackage.images : [], assetCache);
+        await addImagesToZip(skuFolder, Array.isArray(skuPackage.images) ? skuPackage.images : [], assetCache, data, `SKU ${skuPackage.skuId || folderName} 图片`);
       }
     }
   } else {
-    await addImagesToZip(rootFolder, Array.isArray(data?.raw?.images) ? data.raw.images : [], assetCache);
+    await addImagesToZip(rootFolder, Array.isArray(data?.product?.images) ? data.product.images : [], assetCache, data, "主图");
+  }
+
+  const mainJsonData = { ...data };
+  delete mainJsonData.detail;
+  rootFolder.file(`${sanitizePathSegment(filenameBase, "1688-product")}.json`, JSON.stringify(mainJsonData, null, 2));
+
+  if (Array.isArray(data.collectionWarnings) && data.collectionWarnings.length) {
+    rootFolder.file("collection-warnings.txt", data.collectionWarnings.join("\n"));
   }
 
   const blob = await zip.generateAsync({ type: "blob" });
@@ -201,16 +446,19 @@ async function collectCurrentPage() {
       throw new Error("内容脚本没有返回采集结果。请刷新页面后重试。");
     }
 
-    const data = response.data;
+    const data = await enrichDetailPayload(response.data);
     const filenameBase = buildArchiveBaseName(tab.url);
     await downloadZipPackage(data, filenameBase);
 
-    statusText.textContent = data.source?.skuPackageCount
-      ? `采集完成，ZIP 已触发下载（${data.source.skuPackageCount} 个 SKU JSON）。`
+    const successMessage = data.source?.skuPackageCount
+      ? `采集完成，ZIP 已触发下载（${data.source.skuPackageCount} 个 SKU）。`
       : "采集完成，ZIP 已触发下载。";
+    statusText.textContent = Array.isArray(data.collectionWarnings) && data.collectionWarnings.length
+      ? `${successMessage} 但有 ${data.collectionWarnings.length} 个资源下载失败。`
+      : successMessage;
     titleText.textContent = data.source.title || "-";
-    filledCountText.textContent = String(countFilledFields(data.fields));
-    imageCountText.textContent = String(data.raw.images.length);
+    filledCountText.textContent = String(getSkuPackages(data).length);
+    imageCountText.textContent = String(getAllImageUrls(data).length);
   } catch (error) {
     statusText.textContent = error instanceof Error ? error.message : "采集失败。";
   } finally {

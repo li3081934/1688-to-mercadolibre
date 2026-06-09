@@ -20,11 +20,8 @@ export default async function CategoriesPage({ searchParams }: PageProps) {
           <div>
             <p className="eyebrow">Module 01</p>
             <h1>商品分类管理</h1>
-            <p className="muted">每个分类维护自己的模板和 mapper。导出时系统只调用该分类的固定函数接口。</p>
+            <p className="muted">每个分类只维护 Excel 模板和工作表信息。商品导出将改为由 AI 大模型直接填写模板。</p>
           </div>
-          <p className="muted">
-            示例 mapper 可参考 <code>docs/category-mapper.example.cjs</code>，上传后系统会校验是否导出 <code>mapProductToWorkbook</code>。
-          </p>
           {params.message ? <div className={`message ${params.status === "error" ? "error" : "success"}`}>{params.message}</div> : null}
         </article>
 
@@ -48,10 +45,6 @@ export default async function CategoriesPage({ searchParams }: PageProps) {
                 <label htmlFor="templateFile">Excel 模板</label>
                 <input id="templateFile" name="templateFile" type="file" accept=".xlsx,.xlsm,.xls" required />
               </div>
-              <div className="field">
-                <label htmlFor="mapperFile">mapper JS</label>
-                <input id="mapperFile" name="mapperFile" type="file" accept=".js,.cjs,.mjs" required />
-              </div>
             </div>
             <div className="actions">
               <button type="submit" className="button">创建分类</button>
@@ -63,7 +56,7 @@ export default async function CategoriesPage({ searchParams }: PageProps) {
       <section className="table-card">
         <h2>已配置分类</h2>
         {!categories.length ? (
-          <div className="empty-state">还没有分类。先上传一个模板和 mapper 文件。</div>
+          <div className="empty-state">还没有分类。先上传一个 Excel 模板。</div>
         ) : (
           <div className="table-wrap">
             <table>
@@ -85,7 +78,7 @@ export default async function CategoriesPage({ searchParams }: PageProps) {
                     </td>
                     <td>
                       <div className="muted">模板：{toRelativeStoragePath(category.templatePath)}</div>
-                      <div className="muted">Mapper：{toRelativeStoragePath(category.mapperPath)}</div>
+                      <div className="muted">AI 填表：使用分类模板与工作表配置</div>
                     </td>
                     <td>
                       <span className={`badge ${category.isActive ? "success" : "warn"}`}>{category.isActive ? "启用" : "停用"}</span>
@@ -115,10 +108,6 @@ export default async function CategoriesPage({ searchParams }: PageProps) {
                           <div className="field">
                             <label>替换模板</label>
                             <input name="templateFile" type="file" accept=".xlsx,.xlsm,.xls" />
-                          </div>
-                          <div className="field">
-                            <label>替换 mapper</label>
-                            <input name="mapperFile" type="file" accept=".js,.cjs,.mjs" />
                           </div>
                         </div>
                         <div className="actions">

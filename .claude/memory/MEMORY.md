@@ -1,0 +1,2 @@
+- [ML 集成进度](project_ml_integration.md) — OAuth 认证 + 分类查询已实现，商品刊登待续
+- [项目背景](project_background.md) — 1688 商品采集 → 分类映射 → Excel 导出 → 美客多刊登

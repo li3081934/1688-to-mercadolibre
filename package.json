@@ -11,10 +11,11 @@
     "json-to-xlsx": "node scripts/json-to-xlsx.js"
   },
   "dependencies": {
+    "@openrouter/sdk": "^0.12.79",
     "adm-zip": "^0.5.16",
     "better-sqlite3": "^11.10.0",
-    "exceljs": "^4.4.0"
-    ,"next": "^15.3.3",
+    "exceljs": "^4.4.0",
+    "next": "^15.3.3",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
   },

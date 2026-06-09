@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { getProductById } from "@/lib/db";
 import { parseProductBundle } from "@/lib/products";
 import { toRelativeStoragePath } from "@/lib/storage";
+import ExportForm from "./export-form";
 
 export const dynamic = "force-dynamic";
 
@@ -61,6 +62,10 @@ export default async function ProductDetailPage({ params, searchParams }: PagePr
               <span>{toRelativeStoragePath(bundle.mainJsonPath)}</span>
             </div>
             <div>
+              <strong>详情 JSON</strong>
+              <span>{bundle.detailJsonPath ? toRelativeStoragePath(bundle.detailJsonPath) : "未找到"}</span>
+            </div>
+            <div>
               <strong>共享图片</strong>
               <span>{bundle.sharedImagePaths.length}</span>
             </div>
@@ -83,12 +88,12 @@ export default async function ProductDetailPage({ params, searchParams }: PagePr
               <span>{toRelativeStoragePath(product.categoryTemplatePath)}</span>
             </div>
             <div className="meta-row">
-              <span className="meta-label">Mapper 路径</span>
-              <span>{toRelativeStoragePath(product.categoryMapperPath)}</span>
-            </div>
-            <div className="meta-row">
               <span className="meta-label">工作表</span>
               <span>{product.categorySheetName}</span>
+            </div>
+            <div className="meta-row">
+              <span className="meta-label">填写方式</span>
+              <span>AI 大模型填写模板</span>
             </div>
           </div>
         </article>
@@ -96,40 +101,24 @@ export default async function ProductDetailPage({ params, searchParams }: PagePr
 
       <section className="detail-card stack">
         <div>
-          <h2>选择导出 SKU</h2>
-          <p className="muted">默认全选。取消勾选后，只会导出你选中的 SKU。</p>
+          <h2>Excel 填写</h2>
+          <p className="muted">系统会把分类模板、工作表结构、主商品 JSON、已选 SKU JSON 和你的补充提示词一起发送给 AI，让模型生成写入 Excel 的单元格计划。</p>
         </div>
-        <form action={`/products/${product.id}/export`} method="get" className="stack">
-          {bundle.skuItems.length ? (
-            <div className="stack">
-              {bundle.skuItems.map((skuItem) => (
-                <label key={skuItem.key} className="meta-row" style={{ alignItems: "flex-start", gap: 12 }}>
-                  <input type="checkbox" name="sku" value={skuItem.key} defaultChecked />
-                  {skuItem.imageUrl ? (
-                    <img
-                      src={skuItem.imageUrl}
-                      alt={skuItem.label}
-                      width={64}
-                      height={64}
-                      style={{ width: 64, height: 64, objectFit: "cover", borderRadius: 10, flexShrink: 0 }}
-                    />
-                  ) : null}
-                  <strong>{skuItem.label}</strong>
-                </label>
-              ))}
-            </div>
-          ) : (
-            <div className="empty-state">当前商品没有单独 SKU JSON，将按主商品信息导出。</div>
-          )}
-          <div className="actions">
-            <button type="submit" className="button">导出选中 SKU 到 Excel</button>
-          </div>
-        </form>
+        <ExportForm
+          action={`/products/${product.id}/export`}
+          skuItems={bundle.skuItems.map((s) => ({ key: s.key, label: s.label, imageUrl: s.imageUrl }))}
+          hasSku={bundle.skuItems.length > 0}
+        />
       </section>
 
       <section className="detail-card stack">
         <h2>主 JSON 预览</h2>
-        <pre className="code-block">{JSON.stringify(bundle.mainProduct.source || bundle.mainProduct.fields || {}, null, 2)}</pre>
+        <pre className="code-block">{JSON.stringify({
+          source: bundle.mainProduct.source || {},
+          product: bundle.mainProduct.product || {},
+          attributes: bundle.mainProduct.attributes || [],
+          packageInfo: bundle.mainProduct.packageInfo || {}
+        }, null, 2)}</pre>
       </section>
     </main>
   );

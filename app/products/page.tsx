@@ -20,7 +20,7 @@ export default async function ProductsPage({ searchParams }: PageProps) {
           <div>
             <p className="eyebrow">Module 02</p>
             <h1>商品管理</h1>
-            <p className="muted">上传 ZIP 时必须先选分类。系统会自动解压、识别主 JSON 和 SKU JSON，并把商品初始状态设为未上架。</p>
+            <p className="muted">上传 ZIP 时必须先选分类。系统会自动解压、识别主 JSON、detail 文件夹和主 JSON 里的 SKU 列表，并把商品初始状态设为未上架。</p>
           </div>
           {params.message ? <div className={`message ${params.status === "error" ? "error" : "success"}`}>{params.message}</div> : null}
         </article>
@@ -59,7 +59,7 @@ export default async function ProductsPage({ searchParams }: PageProps) {
       <section className="table-card">
         <h2>商品列表</h2>
         {!products.length ? (
-          <div className="empty-state">还没有商品。上传一个 ZIP 之后这里会出现记录。</div>
+          <div className="empty-state">还没有商品。上传一个最新采集的商品 ZIP 之后这里会出现记录。</div>
         ) : (
           <div className="table-wrap">
             <table>

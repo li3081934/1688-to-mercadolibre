@@ -4,7 +4,6 @@ import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 
 import { createCategory } from "@/lib/db";
-import { validateCategoryMapper } from "@/lib/mappers/load-category-mapper";
 import { getCategoryDir, removeDirectory, replaceFormFile } from "@/lib/storage";
 
 export const runtime = "nodejs";
@@ -15,7 +14,6 @@ export async function POST(request: Request) {
   const name = String(formData.get("name") || "").trim();
   const sheetName = String(formData.get("sheetName") || "").trim();
   const templateFile = formData.get("templateFile");
-  const mapperFile = formData.get("mapperFile");
 
   if (!code || !name || !sheetName) {
     return redirectWithMessage(request, "/categories", "error", "分类编码、名称和工作表名不能为空。");
@@ -25,19 +23,12 @@ export async function POST(request: Request) {
     return redirectWithMessage(request, "/categories", "error", "请上传 Excel 模板文件。");
   }
 
-  if (!(mapperFile instanceof File) || mapperFile.size === 0) {
-    return redirectWithMessage(request, "/categories", "error", "请上传 mapper JS 文件。");
-  }
-
   const categoryId = randomUUID();
   const categoryDir = getCategoryDir(categoryId);
   const templatePath = path.join(categoryDir, "template.xlsx");
-  const mapperPath = path.join(categoryDir, "mapper.cjs");
 
   try {
     await replaceFormFile(templateFile, templatePath);
-    await replaceFormFile(mapperFile, mapperPath);
-    await validateCategoryMapper(mapperPath);
 
     const now = new Date().toISOString();
     createCategory({
@@ -46,7 +37,7 @@ export async function POST(request: Request) {
       name,
       sheetName,
       templatePath,
-      mapperPath,
+      mapperPath: "",
       isActive: 1,
       createdAt: now,
       updatedAt: now

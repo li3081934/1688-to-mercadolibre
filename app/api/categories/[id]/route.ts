@@ -3,7 +3,6 @@ import path from "node:path";
 import { NextResponse } from "next/server";
 
 import { countProductsByCategory, deleteCategory, getCategoryById, updateCategory } from "@/lib/db";
-import { validateCategoryMapper } from "@/lib/mappers/load-category-mapper";
 import { removeDirectory, replaceFormFile } from "@/lib/storage";
 
 export const runtime = "nodejs";
@@ -27,7 +26,7 @@ export async function POST(request: Request, context: RouteContext) {
     }
 
     deleteCategory(id);
-    await removeDirectory(path.dirname(category.mapperPath));
+    await removeDirectory(path.dirname(category.templatePath));
 
     return redirectWithMessage(request, "/categories", "success", "分类已删除。");
   }
@@ -37,9 +36,7 @@ export async function POST(request: Request, context: RouteContext) {
   const sheetName = String(formData.get("sheetName") || category.sheetName).trim();
   const isActive = String(formData.get("isActive") || String(category.isActive)) === "1" ? 1 : 0;
   const templateFile = formData.get("templateFile");
-  const mapperFile = formData.get("mapperFile");
   let templatePath = category.templatePath;
-  let mapperPath = category.mapperPath;
 
   try {
     if (templateFile instanceof File && templateFile.size > 0) {
@@ -47,18 +44,11 @@ export async function POST(request: Request, context: RouteContext) {
       await replaceFormFile(templateFile, templatePath);
     }
 
-    if (mapperFile instanceof File && mapperFile.size > 0) {
-      mapperPath = path.join(path.dirname(category.mapperPath), "mapper.cjs");
-      await replaceFormFile(mapperFile, mapperPath);
-      await validateCategoryMapper(mapperPath);
-    }
-
     updateCategory(id, {
       code,
       name,
       sheetName,
       templatePath,
-      mapperPath,
       isActive
     });
 
