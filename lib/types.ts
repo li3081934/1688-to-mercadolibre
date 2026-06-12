@@ -85,21 +85,8 @@ export type ExportJsonRecord = {
   raw?: Record<string, unknown>;
 };
 
-export type CategoryRecord = {
-  id: string;
-  code: string;
-  name: string;
-  sheetName: string;
-  templatePath: string;
-  mapperPath: string;
-  isActive: number;
-  createdAt: string;
-  updatedAt: string;
-};
-
 export type ProductRecord = {
   id: string;
-  categoryId: string;
   title: string;
   offerId: string;
   zipPath: string;
@@ -110,16 +97,25 @@ export type ProductRecord = {
   status: string;
   lastError: string | null;
   lastExportedAt: string | null;
+  mlItemId: string | null;
   createdAt: string;
   updatedAt: string;
 };
 
-export type ProductListItem = ProductRecord & {
-  categoryCode: string;
-  categoryName: string;
-  categorySheetName: string;
-  categoryTemplatePath: string;
-  categoryMapperPath: string;
+export type ProductListItem = ProductRecord;
+
+export type AIModel = {
+  id: number;
+  name: string;
+  url: string;
+  apiKey: string;
+  modelName: string;
+  systemPrompt: string;
+  protocol: string;
+  purpose: string;
+  thinkingEnabled: boolean;
+  createdAt: string;
+  updatedAt: string;
 };
 
 export type ParsedSkuItem = {

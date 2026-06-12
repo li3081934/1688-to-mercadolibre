@@ -1,7 +1,11 @@
+import path from "node:path";
+import { randomUUID } from "node:crypto";
+
 import { NextResponse } from "next/server";
 
 import { getProductById } from "@/lib/db";
 import { exportProductWorkbook } from "@/lib/excel/export-product";
+import { getProductDir, ensureDirectory } from "@/lib/storage";
 
 export const runtime = "nodejs";
 
@@ -9,37 +13,41 @@ type RouteContext = {
   params: Promise<{ id: string }>;
 };
 
-type ExportRequestInput = {
-  selectedSkuKeys: string[];
-  userPrompt: string;
-};
-
-export async function GET(request: Request, context: RouteContext) {
-  const requestUrl = new URL(request.url);
-  return handleExport(request, context, {
-    selectedSkuKeys: requestUrl.searchParams.getAll("sku").map((value) => value.trim()).filter(Boolean),
-    userPrompt: requestUrl.searchParams.get("userPrompt")?.trim() || ""
-  });
-}
-
 export async function POST(request: Request, context: RouteContext) {
-  const formData = await request.formData();
-  return handleExport(request, context, {
-    selectedSkuKeys: formData.getAll("sku").map((value) => String(value || "").trim()).filter(Boolean),
-    userPrompt: String(formData.get("userPrompt") || "").trim()
-  });
-}
-
-async function handleExport(request: Request, context: RouteContext, input: ExportRequestInput) {
-  const { id } = await context.params;
-  const product = getProductById(id);
-
-  if (!product) {
-    return NextResponse.json({ error: "商品不存在。" }, { status: 404 });
-  }
-
   try {
-    const exported = await exportProductWorkbook(product, input);
+    const { id } = await context.params;
+    const product = getProductById(id);
+
+    if (!product) {
+      return NextResponse.json({ error: "商品不存在。" }, { status: 404 });
+    }
+
+    const formData = await request.formData();
+    const templateFile = formData.get("templateFile");
+    const sheetName = String(formData.get("sheetName") || "Sheet1").trim();
+    const userPrompt = String(formData.get("userPrompt") || "").trim();
+    const selectedSkuKeys = formData.getAll("sku").map((value) => String(value || "").trim()).filter(Boolean);
+
+    if (!(templateFile instanceof File) || templateFile.size === 0) {
+      return NextResponse.json({ error: "请上传 Excel 模板文件。" }, { status: 400 });
+    }
+
+    const productDir = getProductDir(id);
+    const tempDir = path.join(productDir, "temp");
+    await ensureDirectory(tempDir);
+    const templatePath = path.join(tempDir, `${randomUUID()}-template.xlsx`);
+
+    const buffer = Buffer.from(await templateFile.arrayBuffer());
+    const { writeFile } = await import("node:fs/promises");
+    await writeFile(templatePath, buffer);
+
+    const exported = await exportProductWorkbook(product, {
+      templatePath,
+      sheetName,
+      selectedSkuKeys,
+      userPrompt
+    });
+
     return new NextResponse(new Uint8Array(exported.buffer), {
       status: 200,
       headers: {
@@ -48,9 +56,8 @@ async function handleExport(request: Request, context: RouteContext, input: Expo
       }
     });
   } catch (error) {
-    const url = new URL(`/products/${product.id}`, request.url);
-    url.searchParams.set("status", "error");
-    url.searchParams.set("message", error instanceof Error ? error.message : "导出失败。");
-    return NextResponse.redirect(url, 302);
+    console.error("AI 导出失败:", error);
+    const message = error instanceof Error ? error.message : `导出失败: ${String(error)}`;
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

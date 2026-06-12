@@ -2,6 +2,27 @@
 
 import { useCallback, useEffect, useState } from "react";
 
+import { toast } from "sonner";
+
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+
 type AuthStatus = {
   authenticated: boolean;
   authUrl?: string;
@@ -19,13 +40,10 @@ type Category = {
 };
 
 const SITES = [
-  { id: "MLA", name: "Argentina" },
   { id: "MLB", name: "Brazil" },
   { id: "MLM", name: "Mexico" },
   { id: "MLC", name: "Chile" },
   { id: "MCO", name: "Colombia" },
-  { id: "MLU", name: "Uruguay" },
-  { id: "MLP", name: "Peru" },
 ];
 
 export default function MercadoLibrePage() {
@@ -36,21 +54,21 @@ export default function MercadoLibrePage() {
   const [catLoading, setCatLoading] = useState(false);
   const [selectedCat, setSelectedCat] = useState<Category | null>(null);
   const [catDetailLoading, setCatDetailLoading] = useState(false);
-  const [message, setMessage] = useState<{ type: string; text: string } | null>(null);
+  const [message, setMessage] = useState<{
+    type: string;
+    text: string;
+  } | null>(null);
 
-  // 读取 URL 中的消息
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const status = params.get("status");
     const msg = params.get("message");
     if (status && msg) {
       setMessage({ type: status, text: msg });
-      // 清除 URL 参数
       window.history.replaceState({}, "", "/mercadolibre");
     }
   }, []);
 
-  // 检查认证状态
   const checkAuth = useCallback(async () => {
     setLoading(true);
     try {
@@ -68,32 +86,34 @@ export default function MercadoLibrePage() {
     checkAuth();
   }, [checkAuth]);
 
-  // 查询分类
   const fetchCategories = async () => {
     setCatLoading(true);
     setCategories(null);
     setSelectedCat(null);
     try {
-      const res = await fetch(`/api/mercadolibre/categories?siteId=${siteId}`);
+      const res = await fetch(
+        `/api/mercadolibre/categories?siteId=${siteId}`,
+      );
       const data = await res.json();
       if (data.success) {
         setCategories(data.data);
       } else {
-        setMessage({ type: "error", text: data.message });
+        toast.error(data.message);
       }
     } catch {
-      setMessage({ type: "error", text: "查询分类失败。" });
+      toast.error("查询分类失败。");
     } finally {
       setCatLoading(false);
     }
   };
 
-  // 查询分类详情（子分类）
   const fetchCategoryDetail = async (catId: string) => {
     setCatDetailLoading(true);
     setSelectedCat(null);
     try {
-      const res = await fetch(`/api/mercadolibre/categories?siteId=${siteId}&categoryId=${catId}`);
+      const res = await fetch(
+        `/api/mercadolibre/categories?siteId=${siteId}&categoryId=${catId}`,
+      );
       const data = await res.json();
       if (data.success) {
         setSelectedCat(data.data);
@@ -106,190 +126,207 @@ export default function MercadoLibrePage() {
   };
 
   return (
-    <main className="grid">
-      <section className="grid two">
-        <article className="panel stack">
-          <div>
-            <p className="eyebrow">Mercado Libre</p>
-            <h1>美客多集成</h1>
-            <p className="muted">连接美客多开发者 API，实现商品自动刊登。</p>
-          </div>
+    <main className="flex flex-col gap-4">
+      <div className="grid-2">
+        <Card>
+          <CardHeader>
+            <CardDescription>Mercado Libre</CardDescription>
+            <CardTitle>美客多集成</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-muted-foreground">
+              连接美客多开发者 API，实现商品自动刊登。
+            </p>
+            {message ? (
+              <Alert
+                variant={
+                  message.type === "error" ? "destructive" : "default"
+                }
+                className="mt-4"
+              >
+                <AlertDescription>{message.text}</AlertDescription>
+              </Alert>
+            ) : null}
+          </CardContent>
+        </Card>
 
-          {message ? (
-            <div className={`message ${message.type === "error" ? "error" : "success"}`}>
-              {message.text}
-            </div>
-          ) : null}
-        </article>
-
-        <article className="panel stack">
-          <h2>账号连接</h2>
-          {loading ? (
-            <p className="muted">检查中...</p>
-          ) : auth?.authenticated ? (
-            <div className="stack">
-              <div className="meta-list">
-                <div className="meta-row">
-                  <span className="meta-label">用户 ID</span>
-                  <span>{auth.mlUserId}</span>
-                </div>
-                <div className="meta-row">
-                  <span className="meta-label">昵称</span>
-                  <span>{auth.nickname}</span>
-                </div>
-                <div className="meta-row">
-                  <span className="meta-label">站点</span>
-                  <span>{auth.siteId}</span>
-                </div>
-                <div className="meta-row">
-                  <span className="meta-label">Token 过期</span>
-                  <span>{auth.tokenExpiresAt ? new Date(auth.tokenExpiresAt).toLocaleString("zh-CN") : "-"}</span>
+        <Card>
+          <CardHeader>
+            <CardTitle>账号连接</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {loading ? (
+              <p className="text-sm text-muted-foreground">检查中...</p>
+            ) : auth?.authenticated ? (
+              <div className="flex flex-col gap-4">
+                <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
+                  <dt className="font-medium text-muted-foreground">
+                    用户 ID
+                  </dt>
+                  <dd>{auth.mlUserId}</dd>
+                  <dt className="font-medium text-muted-foreground">
+                    昵称
+                  </dt>
+                  <dd>{auth.nickname}</dd>
+                  <dt className="font-medium text-muted-foreground">
+                    站点
+                  </dt>
+                  <dd>{auth.siteId}</dd>
+                  <dt className="font-medium text-muted-foreground">
+                    Token 过期
+                  </dt>
+                  <dd>
+                    {auth.tokenExpiresAt
+                      ? new Date(auth.tokenExpiresAt).toLocaleString(
+                          "zh-CN",
+                        )
+                      : "-"}
+                  </dd>
+                </dl>
+                <div>
+                  <a href={auth.authUrl}>
+                    <Button variant="outline">重新授权</Button>
+                  </a>
                 </div>
               </div>
-              <div className="actions">
-                <a href={auth.authUrl} className="button-secondary">重新授权</a>
+            ) : (
+              <div className="flex flex-col gap-3">
+                <p className="text-sm text-muted-foreground">
+                  尚未连接美客多账号。
+                </p>
+                {auth?.authUrl ? (
+                  <a href={auth.authUrl}>
+                    <Button>登录美客多</Button>
+                  </a>
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    请先设置 ML_APP_ID 和 ML_CLIENT_SECRET 环境变量。
+                  </p>
+                )}
               </div>
-            </div>
-          ) : (
-            <div className="stack">
-              <p className="muted">尚未连接美客多账号。</p>
-              {auth?.authUrl ? (
-                <a href={auth.authUrl} className="button">
-                  登录美客多
-                </a>
-              ) : (
-                <p className="muted">请先设置 ML_APP_ID 和 ML_CLIENT_SECRET 环境变量。</p>
-              )}
-            </div>
-          )}
-        </article>
-      </section>
+            )}
+          </CardContent>
+        </Card>
+      </div>
 
       {auth?.authenticated ? (
-        <section className="panel stack">
-          <h2>分类查询</h2>
-          <p className="muted">选择站点，查询美客多商品分类树。</p>
-          <div className="form-grid single">
-            <div className="field">
-              <label htmlFor="site">站点</label>
-              <select id="site" value={siteId} onChange={(e) => setSiteId(e.target.value)}>
-                {SITES.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name} ({s.id})
-                  </option>
-                ))}
-              </select>
+        <Card>
+          <CardHeader>
+            <CardTitle>分类查询</CardTitle>
+            <CardDescription>
+              选择站点，查询美客多商品分类树。
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="site">站点</Label>
+              <Select
+                value={siteId}
+                onValueChange={(v) => setSiteId(v)}
+              >
+                <SelectTrigger id="site" className="w-48">
+                  <SelectValue placeholder="选择站点" />
+                </SelectTrigger>
+                <SelectContent>
+                  {SITES.map((s) => (
+                    <SelectItem key={s.id} value={s.id}>
+                      {s.name} ({s.id})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
-          </div>
-          <div className="actions">
-            <button className="button" onClick={fetchCategories} disabled={catLoading}>
-              {catLoading ? "查询中..." : "查询顶级分类"}
-            </button>
-          </div>
+            <div className="mt-4">
+              <Button
+                onClick={fetchCategories}
+                disabled={catLoading}
+              >
+                {catLoading ? "查询中..." : "查询顶级分类"}
+              </Button>
+            </div>
 
-          <div className="grid two" style={{ marginTop: 14 }}>
-            {categories ? (
-              <div className="stack">
-                <h3>顶级分类（共 {categories.length} 个）</h3>
-                <div
-                  style={{
-                    maxHeight: 400,
-                    overflowY: "auto",
-                    border: "1px solid var(--line)",
-                    borderRadius: 12,
-                    padding: 8,
-                    background: "white",
-                  }}
-                >
-                  {categories.map((cat) => (
-                    <div key={cat.id}>
+            <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
+              {categories ? (
+                <div className="flex flex-col gap-2">
+                  <h3 className="text-sm font-medium">
+                    顶级分类（共 {categories.length} 个）
+                  </h3>
+                  <div className="max-h-96 overflow-y-auto rounded-lg border bg-background p-2">
+                    {categories.map((cat) => (
                       <button
+                        key={cat.id}
                         onClick={() => fetchCategoryDetail(cat.id)}
-                        style={{
-                          background: "none",
-                          border: "none",
-                          cursor: "pointer",
-                          padding: "6px 8px",
-                          display: "block",
-                          width: "100%",
-                          textAlign: "left",
-                          borderRadius: 8,
-                          color: "var(--ink)",
-                        }}
-                        onMouseEnter={(e) => (e.currentTarget.style.background = "var(--panel-strong)")}
-                        onMouseLeave={(e) => (e.currentTarget.style.background = "none")}
+                        className="flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-sm hover:bg-accent hover:text-accent-foreground"
                       >
-                        <strong>{cat.name}</strong>
-                        <span className="muted" style={{ marginLeft: 8, fontSize: 12 }}>
-                          ({cat.id})
+                        <span>
+                          <span className="font-medium">
+                            {cat.name}
+                          </span>
+                          <span className="ml-1 text-xs text-muted-foreground">
+                            ({cat.id})
+                          </span>
                         </span>
                       </button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ) : null}
-
-            {catDetailLoading ? <p className="muted">加载分类详情...</p> : null}
-
-            {selectedCat ? (
-              <div className="stack">
-                <h3>{selectedCat.name}</h3>
-                <div className="meta-list">
-                  <div className="meta-row">
-                    <span className="meta-label">分类 ID</span>
-                    <span>{selectedCat.id}</span>
-                  </div>
-                  <div className="meta-row">
-                    <span className="meta-label">商品数量</span>
-                    <span>{selectedCat.total_items_in_this_category?.toLocaleString()}</span>
+                    ))}
                   </div>
                 </div>
-                {selectedCat.children?.length ? (
-                  <>
-                    <h4>子分类（{selectedCat.children.length} 个）</h4>
-                    <div
-                      style={{
-                        maxHeight: 300,
-                        overflowY: "auto",
-                        border: "1px solid var(--line)",
-                        borderRadius: 12,
-                        padding: 8,
-                        background: "white",
-                      }}
-                    >
-                      {selectedCat.children.map((child) => (
-                        <div key={child.id}>
+              ) : null}
+
+              {catDetailLoading ? (
+                <p className="text-sm text-muted-foreground">
+                  加载分类详情...
+                </p>
+              ) : null}
+
+              {selectedCat ? (
+                <div className="flex flex-col gap-2">
+                  <h3 className="text-sm font-medium">
+                    {selectedCat.name}
+                  </h3>
+                  <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
+                    <dt className="font-medium text-muted-foreground">
+                      分类 ID
+                    </dt>
+                    <dd>{selectedCat.id}</dd>
+                    <dt className="font-medium text-muted-foreground">
+                      商品数量
+                    </dt>
+                    <dd>
+                      {selectedCat.total_items_in_this_category?.toLocaleString()}
+                    </dd>
+                  </dl>
+                  {selectedCat.children?.length ? (
+                    <>
+                      <h4 className="text-sm font-medium">
+                        子分类（{selectedCat.children.length} 个）
+                      </h4>
+                      <div className="max-h-72 overflow-y-auto rounded-lg border bg-background p-2">
+                        {selectedCat.children.map((child) => (
                           <button
-                            onClick={() => fetchCategoryDetail(child.id)}
-                            style={{
-                              background: "none",
-                              border: "none",
-                              cursor: "pointer",
-                              padding: "6px 8px",
-                              display: "block",
-                              width: "100%",
-                              textAlign: "left",
-                              borderRadius: 8,
-                              color: "var(--ink)",
-                            }}
-                            onMouseEnter={(e) => (e.currentTarget.style.background = "var(--panel-strong)")}
-                            onMouseLeave={(e) => (e.currentTarget.style.background = "none")}
+                            key={child.id}
+                            onClick={() =>
+                              fetchCategoryDetail(child.id)
+                            }
+                            className="flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-sm hover:bg-accent hover:text-accent-foreground"
                           >
-                            <strong>{child.name}</strong>
-                            <span className="muted" style={{ marginLeft: 8, fontSize: 12 }}>
-                              ({child.id})
+                            <span>
+                              <span className="font-medium">
+                                {child.name}
+                              </span>
+                              <span className="ml-1 text-xs text-muted-foreground">
+                                ({child.id})
+                              </span>
                             </span>
                           </button>
-                        </div>
-                      ))}
-                    </div>
-                  </>
-                ) : null}
-              </div>
-            ) : null}
-          </div>
-        </section>
+                        ))}
+                      </div>
+                    </>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+          </CardContent>
+        </Card>
       ) : null}
     </main>
   );

@@ -3,6 +3,9 @@ const titleText = document.getElementById("titleText");
 const filledCountText = document.getElementById("filledCountText");
 const imageCountText = document.getElementById("imageCountText");
 const collectButton = document.getElementById("collectButton");
+const uploadButton = document.getElementById("uploadButton");
+const serverUrlInput = document.getElementById("serverUrl");
+const saveUrlButton = document.getElementById("saveUrlButton");
 
 function normalizeWhitespace(value) {
   return String(value || "").replace(/\s+/g, " ").trim();
@@ -27,6 +30,32 @@ function normalizeCollectedImageUrl(url) {
     .trim()
     .replace(/^\\?['\"]+|\\?['\"]+$/g, "")
     .replace(/^\/\//, "https://");
+}
+
+async function loadServerUrl() {
+  try {
+    const result = await chrome.storage.sync.get(["serverUrl"]);
+    if (result.serverUrl) {
+      serverUrlInput.value = result.serverUrl;
+    }
+  } catch {
+    // storage not available
+  }
+}
+
+async function saveServerUrl() {
+  const url = serverUrlInput.value.trim().replace(/\/+$/, "");
+  try {
+    await chrome.storage.sync.set({ serverUrl: url });
+    statusText.textContent = url ? "服务地址已保存。" : "已清空服务地址。";
+    setTimeout(() => {
+      if (statusText.textContent === (url ? "服务地址已保存。" : "已清空服务地址。")) {
+        statusText.textContent = "等待操作";
+      }
+    }, 2000);
+  } catch {
+    statusText.textContent = "保存服务地址失败。";
+  }
 }
 
 function ensureWarnings(data) {
@@ -375,7 +404,7 @@ async function addDetailToZip(rootFolder, data, assetCache) {
   return addImagesToZip(detailFolder, Array.isArray(detail.images) ? detail.images : [], assetCache, data, "详情图片");
 }
 
-async function downloadZipPackage(data, filenameBase) {
+async function buildZipBlob(data, filenameBase) {
   const ZipLibrary = globalThis.JSZip;
   if (!ZipLibrary) {
     throw new Error("ZIP 组件未加载，请重新加载扩展后再试。");
@@ -417,7 +446,11 @@ async function downloadZipPackage(data, filenameBase) {
     rootFolder.file("collection-warnings.txt", data.collectionWarnings.join("\n"));
   }
 
-  const blob = await zip.generateAsync({ type: "blob" });
+  return zip.generateAsync({ type: "blob" });
+}
+
+async function downloadZipPackage(data, filenameBase) {
+  const blob = await buildZipBlob(data, filenameBase);
   const url = URL.createObjectURL(blob);
 
   try {
@@ -431,39 +464,113 @@ async function downloadZipPackage(data, filenameBase) {
   }
 }
 
-async function collectCurrentPage() {
-  collectButton.disabled = true;
-  statusText.textContent = "正在采集页面信息...";
+async function uploadZipToServer(data, filenameBase) {
+  const serverUrl = serverUrlInput.value.trim().replace(/\/+$/, "");
+  if (!serverUrl) {
+    throw new Error("请先配置系统服务地址。");
+  }
+
+  statusText.textContent = "正在构建 ZIP 包...";
+  const blob = await buildZipBlob(data, filenameBase);
+
+  statusText.textContent = "正在上传到系统...";
+  const formData = new FormData();
+  formData.append("zipFile", new File([blob], `${filenameBase}.zip`, { type: "application/zip" }));
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 120000);
 
   try {
-    const tab = await getActiveTab();
-    if (!tab?.id || !tab.url || !tab.url.startsWith("https://detail.1688.com/offer/")) {
-      throw new Error("请先打开 1688 商品详情页。\n支持的地址格式： https://detail.1688.com/offer/*");
+    const response = await fetch(`${serverUrl}/api/products/upload`, {
+      method: "POST",
+      body: formData,
+      signal: controller.signal
+    });
+
+    const result = await response.json();
+    if (result.success) {
+      return result.message || "商品 ZIP 已上传并建档。";
     }
-
-    const response = await requestCollection(tab.id);
-    if (!response?.ok || !response.data) {
-      throw new Error("内容脚本没有返回采集结果。请刷新页面后重试。");
-    }
-
-    const data = await enrichDetailPayload(response.data);
-    const filenameBase = buildArchiveBaseName(tab.url);
-    await downloadZipPackage(data, filenameBase);
-
-    const successMessage = data.source?.skuPackageCount
-      ? `采集完成，ZIP 已触发下载（${data.source.skuPackageCount} 个 SKU）。`
-      : "采集完成，ZIP 已触发下载。";
-    statusText.textContent = Array.isArray(data.collectionWarnings) && data.collectionWarnings.length
-      ? `${successMessage} 但有 ${data.collectionWarnings.length} 个资源下载失败。`
-      : successMessage;
-    titleText.textContent = data.source.title || "-";
-    filledCountText.textContent = String(getSkuPackages(data).length);
-    imageCountText.textContent = String(getAllImageUrls(data).length);
-  } catch (error) {
-    statusText.textContent = error instanceof Error ? error.message : "采集失败。";
+    throw new Error(result.message || "上传失败。");
   } finally {
-    collectButton.disabled = false;
+    clearTimeout(timeoutId);
   }
 }
 
-collectButton.addEventListener("click", collectCurrentPage);
+async function collectData() {
+  const tab = await getActiveTab();
+  if (!tab?.id || !tab.url || !tab.url.startsWith("https://detail.1688.com/offer/")) {
+    throw new Error("请先打开 1688 商品详情页。\n支持的地址格式： https://detail.1688.com/offer/*");
+  }
+
+  const response = await requestCollection(tab.id);
+  if (!response?.ok || !response.data) {
+    throw new Error("内容脚本没有返回采集结果。请刷新页面后重试。");
+  }
+
+  const data = await enrichDetailPayload(response.data);
+  const filenameBase = buildArchiveBaseName(tab.url);
+
+  return { data, filenameBase };
+}
+
+function displayResult(data) {
+  const successMessage = data.source?.skuPackageCount
+    ? `（${data.source.skuPackageCount} 个 SKU）`
+    : "";
+  const warningSuffix = Array.isArray(data.collectionWarnings) && data.collectionWarnings.length
+    ? `，但有 ${data.collectionWarnings.length} 个资源下载失败。`
+    : "。";
+  statusText.textContent = `采集完成${successMessage}${warningSuffix}`;
+  titleText.textContent = data.source.title || "-";
+  filledCountText.textContent = String(getSkuPackages(data).length);
+  imageCountText.textContent = String(getAllImageUrls(data).length);
+}
+
+function setButtonsDisabled(disabled) {
+  collectButton.disabled = disabled;
+  uploadButton.disabled = disabled;
+}
+
+async function collectAndDownload() {
+  setButtonsDisabled(true);
+  statusText.textContent = "正在采集页面信息...";
+
+  try {
+    const { data, filenameBase } = await collectData();
+    await downloadZipPackage(data, filenameBase);
+    displayResult(data);
+    statusText.textContent = "采集完成，ZIP 已触发下载。" + (
+      Array.isArray(data.collectionWarnings) && data.collectionWarnings.length
+        ? ` 但有 ${data.collectionWarnings.length} 个资源下载失败。`
+        : ""
+    );
+  } catch (error) {
+    statusText.textContent = error instanceof Error ? error.message : "采集失败。";
+  } finally {
+    setButtonsDisabled(false);
+  }
+}
+
+async function collectAndUpload() {
+  setButtonsDisabled(true);
+
+  try {
+    await saveServerUrl();
+    statusText.textContent = "正在采集页面信息...";
+    const { data, filenameBase } = await collectData();
+    const message = await uploadZipToServer(data, filenameBase);
+    displayResult(data);
+    statusText.textContent = message;
+  } catch (error) {
+    statusText.textContent = error instanceof Error ? error.message : "操作失败。";
+  } finally {
+    setButtonsDisabled(false);
+  }
+}
+
+collectButton.addEventListener("click", collectAndDownload);
+uploadButton.addEventListener("click", collectAndUpload);
+saveUrlButton.addEventListener("click", saveServerUrl);
+
+loadServerUrl();

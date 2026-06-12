@@ -826,7 +826,6 @@ function buildFieldRecord() {
       detailUrl: structuredData?.description?.detailUrl || ""
     },
     attributes,
-    packageInfo,
     detail: {
       url: structuredData?.description?.detailUrl || "",
       blocks: [],

@@ -1,4 +1,6 @@
-const ML_AUTH_URL = "https://auth.mercadolibre.com/authorization";
+import { getBaseUrl } from "@/lib/url";
+
+const ML_AUTH_URL = "https://global-selling.mercadolibre.com/authorization";
 const ML_TOKEN_URL = "https://api.mercadolibre.com/oauth/token";
 
 function getClientId(): string {
@@ -14,7 +16,9 @@ function getClientSecret(): string {
 }
 
 function getRedirectUri(): string {
-  return process.env.ML_REDIRECT_URI || "http://localhost:3000/api/mercadolibre/callback";
+  if (process.env.ML_REDIRECT_URI) return process.env.ML_REDIRECT_URI;
+  const baseUrl = getBaseUrl();
+  return `${baseUrl.replace(/\/+$/, "")}/api/mercadolibre/callback`;
 }
 
 /**
@@ -25,6 +29,7 @@ export function getAuthUrl(): string {
     response_type: "code",
     client_id: getClientId(),
     redirect_uri: getRedirectUri(),
+    scope: "offline_access read write",
   });
   return `${ML_AUTH_URL}?${params.toString()}`;
 }
@@ -47,12 +52,44 @@ export async function exchangeCode(code: string) {
     body: body.toString(),
   });
 
+  const bodyText = await res.text();
+
   if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`OAuth token 交换失败 (${res.status}): ${text}`);
+    throw new Error(`OAuth token 交换失败 (${res.status}): ${bodyText}`);
   }
 
-  return res.json() as Promise<import("./types").MLOAuthResponse>;
+  const data = JSON.parse(bodyText);
+
+  if (!data.access_token) {
+    throw new Error(
+      `OAuth token 交换响应异常: ${JSON.stringify(data)}`
+    );
+  }
+
+  if (!data.refresh_token) {
+    console.error(
+      "[exchangeCode] 警告: refresh_token 缺失, 完整响应:",
+      JSON.stringify(data)
+    );
+  }
+
+  return data as import("./types").MLOAuthResponse;
+}
+
+async function fetchWithRetry(
+  url: string,
+  options: RequestInit,
+  retries = 3
+): Promise<Response> {
+  for (let i = 0; i < retries; i++) {
+    const res = await fetch(url, options);
+    if (res.ok || i === retries - 1) return res;
+    if (res.status < 500) return res;
+    await new Promise((r) =>
+      setTimeout(r, Math.min(1000 * 2 ** i + Math.random() * 500, 8000))
+    );
+  }
+  throw new Error("fetchWithRetry: unreachable");
 }
 
 /**
@@ -66,7 +103,7 @@ export async function refreshAccessToken(refreshToken: string) {
     refresh_token: refreshToken,
   });
 
-  const res = await fetch(ML_TOKEN_URL, {
+  const res = await fetchWithRetry(ML_TOKEN_URL, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: body.toString(),

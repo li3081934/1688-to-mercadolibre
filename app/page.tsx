@@ -1,34 +1,37 @@
 import Link from "next/link";
 
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import DownloadExtensionButton from "@/components/download-extension-button";
+
 export default function HomePage() {
   return (
-    <main className="grid">
-      <section className="panel">
-        <p className="eyebrow">Local Workflow</p>
-        <h1 className="headline">把第二步从一次性脚本改成分类驱动的管理系统</h1>
-        <p className="muted">
-          每个分类单独维护名称、Excel 模板和 mapper JS。商品上传 ZIP 时选择分类，系统自动解压建档，导出时再按分类规则生成 Excel。
-        </p>
-        <div className="actions">
-          <Link href="/categories" className="button">
-            进入分类管理
-          </Link>
-          <Link href="/products" className="button-secondary">
-            进入商品管理
-          </Link>
-        </div>
-      </section>
-
-      <section className="grid-2">
-        <article className="panel">
-          <h2>模块一：商品分类管理</h2>
-          <p className="muted">配置分类名称、模板工作表、Excel 模板文件和 mapper JS 文件。</p>
-        </article>
-        <article className="panel">
-          <h2>模块二：商品管理</h2>
-          <p className="muted">上传导出的 ZIP，选择分类，默认标记为未上架，并提供单商品导出 Excel 按钮。</p>
-        </article>
-      </section>
+    <main>
+      <Card>
+        <CardHeader>
+          <CardDescription>Local Workflow</CardDescription>
+          <CardTitle className="text-3xl leading-tight">
+            1688 → Mercado Libre 商品导出管理系统
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-4">
+          <p className="text-muted-foreground">
+            上传 1688 采集的 ZIP 压缩包，使用 AI 大模型自动填写 Excel 模板并导出。
+          </p>
+          <div className="flex flex-wrap gap-3">
+            <Link href="/products">
+              <Button>进入商品管理</Button>
+            </Link>
+            <DownloadExtensionButton />
+          </div>
+        </CardContent>
+      </Card>
     </main>
   );
 }

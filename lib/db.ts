@@ -4,7 +4,7 @@ import path from "node:path";
 import Database from "better-sqlite3";
 
 import { getDatabasePath } from "@/lib/storage";
-import type { CategoryRecord, ProductListItem, ProductRecord } from "@/lib/types";
+import type { AIModel, ProductListItem, ProductRecord } from "@/lib/types";
 import type { MLAccount } from "@/lib/mercadolibre/types";
 
 let database: Database.Database | null = null;
@@ -20,14 +20,33 @@ function openDatabase() {
   database = new Database(dbPath);
   database.pragma("journal_mode = WAL");
   database.exec(`
-    CREATE TABLE IF NOT EXISTS categories (
+    CREATE TABLE IF NOT EXISTS products (
       id TEXT PRIMARY KEY,
-      code TEXT NOT NULL UNIQUE,
+      title TEXT NOT NULL,
+      offerId TEXT NOT NULL,
+      zipPath TEXT NOT NULL,
+      extractedDir TEXT NOT NULL,
+      mainJsonPath TEXT NOT NULL,
+      skuCount INTEGER NOT NULL DEFAULT 0,
+      isListed INTEGER NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'ready',
+      lastError TEXT,
+      lastExportedAt TEXT,
+      mlItemId TEXT DEFAULT NULL,
+      createdAt TEXT NOT NULL,
+      updatedAt TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS ai_models (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,
-      sheetName TEXT NOT NULL,
-      templatePath TEXT NOT NULL,
-      mapperPath TEXT NOT NULL,
-      isActive INTEGER NOT NULL DEFAULT 1,
+      url TEXT NOT NULL,
+      apiKey TEXT NOT NULL,
+      modelName TEXT NOT NULL,
+      systemPrompt TEXT NOT NULL DEFAULT '',
+      protocol TEXT NOT NULL DEFAULT 'openai',
+      thinkingEnabled INTEGER NOT NULL DEFAULT 0,
+      purpose TEXT NOT NULL,
       createdAt TEXT NOT NULL,
       updatedAt TEXT NOT NULL
     );
@@ -43,25 +62,25 @@ function openDatabase() {
       createdAt TEXT NOT NULL,
       updatedAt TEXT NOT NULL
     );
-
-    CREATE TABLE IF NOT EXISTS products (
-      id TEXT PRIMARY KEY,
-      categoryId TEXT NOT NULL,
-      title TEXT NOT NULL,
-      offerId TEXT NOT NULL,
-      zipPath TEXT NOT NULL,
-      extractedDir TEXT NOT NULL,
-      mainJsonPath TEXT NOT NULL,
-      skuCount INTEGER NOT NULL DEFAULT 0,
-      isListed INTEGER NOT NULL DEFAULT 0,
-      status TEXT NOT NULL DEFAULT 'ready',
-      lastError TEXT,
-      lastExportedAt TEXT,
-      createdAt TEXT NOT NULL,
-      updatedAt TEXT NOT NULL,
-      FOREIGN KEY (categoryId) REFERENCES categories(id)
-    );
   `);
+
+  try {
+    database.exec(`ALTER TABLE products ADD COLUMN mlItemId TEXT DEFAULT NULL`);
+  } catch {
+
+  }
+
+  try {
+    database.exec(`ALTER TABLE ai_models ADD COLUMN protocol TEXT NOT NULL DEFAULT 'openai'`);
+  } catch {
+
+  }
+
+  try {
+    database.exec(`ALTER TABLE ai_models ADD COLUMN thinkingEnabled INTEGER NOT NULL DEFAULT 0`);
+  } catch {
+
+  }
 
   return database;
 }
@@ -70,85 +89,14 @@ function getDb() {
   return openDatabase();
 }
 
-export function listCategories() {
-  return getDb()
-    .prepare("SELECT * FROM categories ORDER BY createdAt DESC")
-    .all() as CategoryRecord[];
-}
-
-export function listActiveCategories() {
-  return getDb()
-    .prepare("SELECT * FROM categories WHERE isActive = 1 ORDER BY name ASC")
-    .all() as CategoryRecord[];
-}
-
-export function getCategoryById(categoryId: string) {
-  return getDb()
-    .prepare("SELECT * FROM categories WHERE id = ?")
-    .get(categoryId) as CategoryRecord | undefined;
-}
-
-export function createCategory(category: CategoryRecord) {
-  getDb()
-    .prepare(
-      `INSERT INTO categories (id, code, name, sheetName, templatePath, mapperPath, isActive, createdAt, updatedAt)
-       VALUES (@id, @code, @name, @sheetName, @templatePath, @mapperPath, @isActive, @createdAt, @updatedAt)`
-    )
-    .run(category);
-}
-
-export function updateCategory(categoryId: string, patch: Partial<Omit<CategoryRecord, "id" | "createdAt">>) {
-  const current = getCategoryById(categoryId);
-  if (!current) {
-    throw new Error("分类不存在。");
-  }
-
-  const next: CategoryRecord = {
-    ...current,
-    ...patch,
-    updatedAt: new Date().toISOString()
-  };
-
-  getDb()
-    .prepare(
-      `UPDATE categories
-       SET code = @code,
-           name = @name,
-           sheetName = @sheetName,
-           templatePath = @templatePath,
-           mapperPath = @mapperPath,
-           isActive = @isActive,
-           updatedAt = @updatedAt
-       WHERE id = @id`
-    )
-    .run(next);
-
-  return next;
-}
-
-export function countProductsByCategory(categoryId: string) {
-  const row = getDb()
-    .prepare("SELECT COUNT(*) AS total FROM products WHERE categoryId = ?")
-    .get(categoryId) as { total: number } | undefined;
-
-  return row?.total ?? 0;
-}
-
-export function deleteCategory(categoryId: string) {
-  getDb()
-    .prepare("DELETE FROM categories WHERE id = ?")
-    .run(categoryId);
-}
-
 export function listProducts() {
   return getDb()
     .prepare(
-      `SELECT products.*, categories.code AS categoryCode, categories.name AS categoryName,
-              categories.sheetName AS categorySheetName, categories.templatePath AS categoryTemplatePath,
-              categories.mapperPath AS categoryMapperPath
+      `SELECT id, title, offerId, zipPath, extractedDir, mainJsonPath,
+              skuCount, isListed, status, lastError, lastExportedAt,
+              mlItemId, createdAt, updatedAt
        FROM products
-       INNER JOIN categories ON categories.id = products.categoryId
-       ORDER BY products.createdAt DESC`
+       ORDER BY createdAt DESC`
     )
     .all() as ProductListItem[];
 }
@@ -156,12 +104,11 @@ export function listProducts() {
 export function getProductById(productId: string) {
   return getDb()
     .prepare(
-      `SELECT products.*, categories.code AS categoryCode, categories.name AS categoryName,
-              categories.sheetName AS categorySheetName, categories.templatePath AS categoryTemplatePath,
-              categories.mapperPath AS categoryMapperPath
+      `SELECT id, title, offerId, zipPath, extractedDir, mainJsonPath,
+              skuCount, isListed, status, lastError, lastExportedAt,
+              mlItemId, createdAt, updatedAt
        FROM products
-       INNER JOIN categories ON categories.id = products.categoryId
-       WHERE products.id = ?`
+       WHERE id = ?`
     )
     .get(productId) as ProductListItem | undefined;
 }
@@ -169,8 +116,8 @@ export function getProductById(productId: string) {
 export function createProduct(product: ProductRecord) {
   getDb()
     .prepare(
-      `INSERT INTO products (id, categoryId, title, offerId, zipPath, extractedDir, mainJsonPath, skuCount, isListed, status, lastError, lastExportedAt, createdAt, updatedAt)
-       VALUES (@id, @categoryId, @title, @offerId, @zipPath, @extractedDir, @mainJsonPath, @skuCount, @isListed, @status, @lastError, @lastExportedAt, @createdAt, @updatedAt)`
+      `INSERT INTO products (id, title, offerId, zipPath, extractedDir, mainJsonPath, skuCount, isListed, status, lastError, lastExportedAt, createdAt, updatedAt)
+       VALUES (@id, @title, @offerId, @zipPath, @extractedDir, @mainJsonPath, @skuCount, @isListed, @status, @lastError, @lastExportedAt, @createdAt, @updatedAt)`
     )
     .run(product);
 }
@@ -193,8 +140,7 @@ export function updateProduct(productId: string, patch: Partial<Omit<ProductReco
   getDb()
     .prepare(
       `UPDATE products
-       SET categoryId = @categoryId,
-           title = @title,
+       SET title = @title,
            offerId = @offerId,
            zipPath = @zipPath,
            extractedDir = @extractedDir,
@@ -204,6 +150,7 @@ export function updateProduct(productId: string, patch: Partial<Omit<ProductReco
            status = @status,
            lastError = @lastError,
            lastExportedAt = @lastExportedAt,
+           mlItemId = @mlItemId,
            updatedAt = @updatedAt
        WHERE id = @id`
     )
@@ -217,8 +164,6 @@ export function deleteProduct(productId: string) {
     .prepare("DELETE FROM products WHERE id = ?")
     .run(productId);
 }
-
-// ---- Mercado Libre 账号 ----
 
 export function getMLAccount(): MLAccount | undefined {
   return getDb()
@@ -259,4 +204,81 @@ export function updateMLAccount(mlUserId: number, patch: { accessToken?: string;
       mlUserId,
       updatedAt: new Date().toISOString(),
     });
+}
+
+function toDbModel(row: Record<string, unknown>): Record<string, unknown> {
+  if ("thinkingEnabled" in row) {
+    row.thinkingEnabled = row.thinkingEnabled ? 1 : 0;
+  }
+  return row;
+}
+
+function fromDbModel(row: Record<string, unknown>): Record<string, unknown> {
+  if (row && "thinkingEnabled" in row) {
+    row.thinkingEnabled = !!row.thinkingEnabled;
+  }
+  return row;
+}
+
+export function listAIModels() {
+  return getDb()
+    .prepare("SELECT * FROM ai_models ORDER BY createdAt DESC")
+    .all()
+    .map((row) => fromDbModel(row as Record<string, unknown>)) as AIModel[];
+}
+
+export function getAIModelById(id: number) {
+  const row = getDb()
+    .prepare("SELECT * FROM ai_models WHERE id = ?")
+    .get(id) as Record<string, unknown> | undefined;
+  return row ? fromDbModel(row) as AIModel : undefined;
+}
+
+export function createAIModel(model: Omit<AIModel, "id">) {
+  getDb()
+    .prepare(
+      `INSERT INTO ai_models (name, url, apiKey, modelName, systemPrompt, protocol, thinkingEnabled, purpose, createdAt, updatedAt)
+       VALUES (@name, @url, @apiKey, @modelName, @systemPrompt, @protocol, @thinkingEnabled, @purpose, @createdAt, @updatedAt)`
+    )
+    .run(toDbModel({ ...model }));
+}
+
+export function updateAIModel(id: number, patch: Partial<Omit<AIModel, "id" | "createdAt">>) {
+  const current = getDb()
+    .prepare("SELECT * FROM ai_models WHERE id = ?")
+    .get(id) as Record<string, unknown> | undefined;
+
+  if (!current) {
+    throw new Error("AI 模型不存在。");
+  }
+
+  const next = {
+    ...current,
+    ...patch,
+    updatedAt: new Date().toISOString(),
+  };
+
+  getDb()
+    .prepare(
+      `UPDATE ai_models
+       SET name = @name,
+           url = @url,
+           apiKey = @apiKey,
+           modelName = @modelName,
+           systemPrompt = @systemPrompt,
+           protocol = @protocol,
+           thinkingEnabled = @thinkingEnabled,
+           purpose = @purpose,
+           updatedAt = @updatedAt
+       WHERE id = @id`
+    )
+    .run(toDbModel(next));
+
+  return fromDbModel(next) as AIModel;
+}
+
+export function deleteAIModel(id: number) {
+  getDb()
+    .prepare("DELETE FROM ai_models WHERE id = ?")
+    .run(id);
 }

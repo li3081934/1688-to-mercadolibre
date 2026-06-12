@@ -7,3 +7,4 @@ storage/
 .env.*.local
 *.tsbuildinfo
 docs/
+.claude/
