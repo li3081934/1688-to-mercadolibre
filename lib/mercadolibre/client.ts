@@ -1,4 +1,4 @@
-import type { MLCategory, MLCategoryAttribute, MLCreateItemRequest, MLCreateItemResponse, MLPredictedCategory, MLSite } from "./types";
+import type { MLCategory, MLCategoryAttribute, MLCreateItemRequest, MLCreateItemResponse, MLMarketplaceUserResponse, MLPredictedCategory, MLSite, MLUserResponse } from "./types";
 
 const API_BASE = "https://api.mercadolibre.com";
 
@@ -80,6 +80,27 @@ export async function predictCategory(
 }
 
 /**
+ * 获取卖家已配置的可售市场列表
+ */
+export async function getMarketplaceUsers(
+  accessToken: string,
+  userId: number
+): Promise<MLMarketplaceUserResponse> {
+  return mlFetch(`/marketplace/users/${userId}`, accessToken) as Promise<MLMarketplaceUserResponse>;
+}
+
+/**
+ * 获取 ML 用户信息（含 tags）
+ */
+export async function getUser(
+  accessToken: string,
+  userId?: number
+): Promise<MLUserResponse> {
+  const endpoint = userId ? `/users/${userId}` : "/users/me";
+  return mlFetch(endpoint, accessToken) as Promise<MLUserResponse>;
+}
+
+/**
  * Global Selling (CBT) 创建商品刊登
  * 参考: https://global-selling.mercadolibre.com/devsite/global-listing
  * - 标题必须为英文
@@ -91,13 +112,23 @@ export async function createItem(
   accessToken: string,
   itemData: MLCreateItemRequest
 ): Promise<MLCreateItemResponse> {
+  console.log("[createItem] POST /global/items 请求参数:", JSON.stringify(itemData, null, 2));
   try {
     const result = await mlFetch("/global/items", accessToken, {
       method: "POST",
       body: JSON.stringify(itemData),
       timeout: 90000,
     }) as MLCreateItemResponse;
-    console.log("[createItem] ML 接口返回(成功):", JSON.stringify(result, null, 2));
+    console.log("[createItem] ML 接口返回:", JSON.stringify(result, null, 2));
+
+    const siteErrors = result.site_items.filter((s) => s.error);
+    if (siteErrors.length > 0) {
+      const details = siteErrors
+        .map((s) => `[${s.site_id}] ${s.error?.error || s.error?.message}`)
+        .join("; ");
+      throw new Error(`站点刊登失败: ${details}`);
+    }
+
     return result;
   } catch (err) {
     console.log("[createItem] ML 接口返回(失败):", err instanceof Error ? err.message : String(err));

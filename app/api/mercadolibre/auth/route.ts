@@ -9,12 +9,19 @@ export async function GET() {
 
   // 已认证，返回账号信息
   if (account) {
+    let tags: string[] = [];
+    try {
+      tags = JSON.parse(account.tags || "[]");
+    } catch {}
+
     return NextResponse.json({
       authenticated: true,
       mlUserId: account.mlUserId,
       siteId: account.siteId,
       nickname: account.nickname,
       tokenExpiresAt: account.tokenExpiresAt,
+      tags,
+      isUserProductSeller: tags.includes("user_product_seller"),
     });
   }
 

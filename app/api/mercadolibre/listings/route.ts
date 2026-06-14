@@ -22,6 +22,7 @@ type ListItemRequestBody = {
   mlCategoryId: string;
   title?: string;
   price?: number;
+  description?: string;
 };
 
 export async function POST(request: Request) {
@@ -60,7 +61,7 @@ export async function POST(request: Request) {
     const sitesToSell = buildSitesToSell([]);
     const attributes = buildAttributes(bundle.mainProduct, product.offerId);
     const saleTerms = buildSaleTerms();
-    const descriptionText = buildItemDescription(bundle.mainProduct);
+    const descriptionText = body.description?.trim() || buildItemDescription(bundle.mainProduct);
 
     const itemPayload = {
       sites_to_sell: sitesToSell,

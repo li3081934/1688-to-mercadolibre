@@ -62,6 +62,7 @@ function openDatabase() {
       createdAt TEXT NOT NULL,
       updatedAt TEXT NOT NULL
     );
+
   `);
 
   try {
@@ -78,6 +79,12 @@ function openDatabase() {
 
   try {
     database.exec(`ALTER TABLE ai_models ADD COLUMN thinkingEnabled INTEGER NOT NULL DEFAULT 0`);
+  } catch {
+
+  }
+
+  try {
+    database.exec(`ALTER TABLE ml_accounts ADD COLUMN tags TEXT NOT NULL DEFAULT '[]'`);
   } catch {
 
   }
@@ -174,8 +181,8 @@ export function getMLAccount(): MLAccount | undefined {
 export function saveMLAccount(account: Omit<MLAccount, "id">) {
   getDb()
     .prepare(
-      `INSERT INTO ml_accounts (mlUserId, siteId, accessToken, refreshToken, tokenExpiresAt, nickname, createdAt, updatedAt)
-       VALUES (@mlUserId, @siteId, @accessToken, @refreshToken, @tokenExpiresAt, @nickname, @createdAt, @updatedAt)`
+      `INSERT INTO ml_accounts (mlUserId, siteId, accessToken, refreshToken, tokenExpiresAt, nickname, tags, createdAt, updatedAt)
+       VALUES (@mlUserId, @siteId, @accessToken, @refreshToken, @tokenExpiresAt, @nickname, @tags, @createdAt, @updatedAt)`
     )
     .run(account);
 }
@@ -202,6 +209,21 @@ export function updateMLAccount(mlUserId: number, patch: { accessToken?: string;
       ...current,
       ...patch,
       mlUserId,
+      updatedAt: new Date().toISOString(),
+    });
+}
+
+export function updateMLAccountTags(mlUserId: number, tags: string[]) {
+  getDb()
+    .prepare(
+      `UPDATE ml_accounts
+       SET tags = @tags,
+           updatedAt = @updatedAt
+       WHERE mlUserId = @mlUserId`
+    )
+    .run({
+      mlUserId,
+      tags: JSON.stringify(tags),
       updatedAt: new Date().toISOString(),
     });
 }

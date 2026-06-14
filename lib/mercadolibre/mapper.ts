@@ -159,24 +159,19 @@ export function getPicturesArray(
 
 /**
  * 构建 sites_to_sell 数组
- * Global Selling 需要指定目标市场
  */
 export function buildSitesToSell(
-  siteIds: string[]
+  siteIds: string[],
+  listingTypeId: "gold_special" | "gold_pro" = "gold_special"
 ): Array<{
   site_id: string;
   logistic_type: "remote";
   listing_type_id: "gold_special" | "gold_pro";
 }> {
-  if (siteIds.length === 0) {
-    // 默认发布到所有可用市场
-    siteIds = ["MLB", "MLM", "MLC", "MCO"];
-  }
-
   return siteIds.map((siteId) => ({
     site_id: siteId,
     logistic_type: "remote" as const,
-    listing_type_id: "gold_special" as const,
+    listing_type_id: listingTypeId,
   }));
 }
 
@@ -235,26 +230,34 @@ export function buildAttributes(
   return attributes;
 }
 
-/**
- * 构建 sale_terms 数组
- * Global Selling 需要保修信息
- */
-export function buildSaleTerms(): Array<{
+const WARRANTY_OPTIONS: Record<string, { value_id: string; value_name: string }> = {
+  "6150835": { value_id: "6150835", value_name: "No warranty" },
+  "2230279": { value_id: "2230279", value_name: "Factory warranty" },
+  "2230278": { value_id: "2230278", value_name: "Seller warranty" },
+};
+
+export function buildSaleTerms(
+  warrantyTypeId?: string,
+  warrantyTime?: string
+): Array<{
   id: string;
   value_id?: string;
   value_name: string;
 }> {
-  return [
-    {
-      id: "WARRANTY_TYPE",
-      value_id: "2230279",
-      value_name: "Factory warranty",
-    },
-    {
-      id: "WARRANTY_TIME",
-      value_name: "30 days",
-    },
+  const type = warrantyTypeId ? WARRANTY_OPTIONS[warrantyTypeId] : WARRANTY_OPTIONS["6150835"];
+  if (!type) {
+    return [{ id: "WARRANTY_TYPE", value_id: "6150835", value_name: "No warranty" }];
+  }
+
+  const result: Array<{ id: string; value_id?: string; value_name: string }> = [
+    { id: "WARRANTY_TYPE", value_id: type.value_id, value_name: type.value_name },
   ];
+
+  if (type.value_id !== "6150835" && warrantyTime) {
+    result.push({ id: "WARRANTY_TIME", value_name: warrantyTime });
+  }
+
+  return result;
 }
 
 /**

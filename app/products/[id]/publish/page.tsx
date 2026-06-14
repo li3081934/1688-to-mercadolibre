@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { InputGroup, InputGroupInput, InputGroupAddon, InputGroupButton } from "@/components/ui/input-group";
 import { Label } from "@/components/ui/label";
 import {
@@ -43,10 +44,14 @@ import {
 
 type SkuOverride = {
   title: string;
+  description: string;
   price: string;
   quantity: string;
   pictureIds: string[];
   attributes: Array<{ id: string; value_name: string }>;
+  warrantyTypeId: string;
+  warrantyTime: string;
+  listingTypeId: string;
 };
 
 type CategoryAttr = {
@@ -179,6 +184,7 @@ export default function PublishPage() {
 
   const [showAttributes, setShowAttributes] = useState(false);
   const [translating, setTranslating] = useState<string | null>(null);
+  const [translatingDesc, setTranslatingDesc] = useState<string | null>(null);
   const [uploadingImage, setUploadingImage] = useState<string | null>(null);
   const [collapsedSkus, setCollapsedSkus] = useState<Set<string>>(new Set());
   const [imageViewer, setImageViewer] = useState<{
@@ -188,6 +194,8 @@ export default function PublishPage() {
   } | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
   const [authUrl, setAuthUrl] = useState<string | null>(null);
+  const [availableSites, setAvailableSites] = useState<string[]>([]);
+  const [selectedSites, setSelectedSites] = useState<string[]>([]);
 
   useEffect(() => {
     if (!productId) return;
@@ -207,23 +215,47 @@ export default function PublishPage() {
         const overrides: Record<string, SkuOverride> = {};
         const baseTitle =
           bundleData.mainProduct?.product?.title || prodData.title || "";
+        const rawDesc =
+          bundleData.mainProduct?.detail?.text ||
+          bundleData.mainProduct?.detail?.html ||
+          bundleData.mainProduct?.product?.description ||
+          bundleData.mainProduct?.product?.title ||
+          "";
+        const baseDescription = rawDesc
+          .replace(/<[^>]*>/g, "")
+          .replace(/&nbsp;/g, " ")
+          .replace(/&amp;/g, "&")
+          .replace(/&lt;/g, "<")
+          .replace(/&gt;/g, ">")
+          .replace(/&quot;/g, '"')
+          .replace(/&#39;/g, "'")
+          .replace(/\s+/g, " ")
+          .trim();
         for (const sku of bundleData.skuItems || []) {
           const skuPrice =
             bundleData.skuProducts?.[0]?.sku?.price || "";
           overrides[sku.key] = {
             title: `${baseTitle} - ${sku.label}`.slice(0, 60),
+            description: baseDescription,
             price: skuPrice
               ? parseFloat(skuPrice.replace(/[^0-9.]/g, "")).toString()
               : "",
             quantity: "100",
             pictureIds: [],
             attributes: [],
+            warrantyTypeId: "6150835",
+            warrantyTime: "",
+            listingTypeId: "gold_special",
           };
         }
         if (overrides.main) {
           overrides.main.title = baseTitle.slice(0, 60);
+          overrides.main.description = baseDescription;
           overrides.main.quantity = "100";
           overrides.main.attributes = [];
+          overrides.main.warrantyTypeId = "6150835";
+          overrides.main.warrantyTime = "";
+          overrides.main.listingTypeId = "gold_special";
         }
         setSkuOverrides(overrides);
         setSelectedSkuKeys(new Set(Object.keys(overrides)));
@@ -237,7 +269,18 @@ export default function PublishPage() {
       .then((r) => r.json())
       .then((data) => {
         setAuthChecked(true);
-        if (data.authenticated) { /* siteId 由用户手动选择，默认墨西哥 */ }
+        if (data.authenticated) {
+          fetch("/api/mercadolibre/marketplaces")
+            .then((r) => r.json())
+            .then((mkt) => {
+              if (mkt.success) {
+                const sites = mkt.data.map((m: { siteId: string }) => m.siteId);
+                setAvailableSites(sites);
+                setSelectedSites(sites.includes("MLM") ? ["MLM"] : sites.slice(0, 1));
+              }
+            })
+            .catch(() => {});
+        }
         else if (data.authUrl) setAuthUrl(data.authUrl);
       })
       .catch(() => setAuthChecked(true));
@@ -405,34 +448,46 @@ export default function PublishPage() {
       toast.error("请先选择美客多分类");
       return;
     }
+
+    const selectedEntries = Object.entries(skuOverrides).filter(
+      ([skuKey]) => selectedSkuKeys.has(skuKey),
+    );
+    const missingImages = selectedEntries.filter(
+      ([, override]) => !override.pictureIds.length,
+    );
+    if (missingImages.length > 0) {
+      toast.error("请先为所有上架的 SKU 上传图片");
+      return;
+    }
+
     setPublishing(true);
     setResult(null);
 
-    const skus = Object.entries(skuOverrides)
-      .filter(([skuKey]) => selectedSkuKeys.has(skuKey))
+    const skus = selectedEntries
       .map(([skuKey, override]) => ({
         skuKey,
         title: override.title || undefined,
+        description: override.description || undefined,
         price: override.price
           ? parseFloat(override.price)
           : undefined,
         quantity: override.quantity
           ? parseInt(override.quantity)
           : undefined,
-        pictureIds:
-          override.pictureIds.length > 0
-            ? override.pictureIds
-            : undefined,
+        pictureIds: override.pictureIds,
         attributes: override.attributes.filter(
           (a) => a.value_name.trim(),
         ),
+        warrantyTypeId: override.warrantyTypeId !== "6150835" ? override.warrantyTypeId : undefined,
+        warrantyTime: override.warrantyTime || undefined,
+        listingTypeId: override.listingTypeId as "gold_special" | "gold_pro" | undefined,
       }));
 
     try {
       const res = await fetch("/api/mercadolibre/publish", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ productId, mlCategoryId, skus }),
+        body: JSON.stringify({ productId, mlCategoryId, sites: selectedSites, skus }),
       });
       const data = await res.json();
       if (data.success) {
@@ -468,6 +523,30 @@ export default function PublishPage() {
       /* ignore */
     } finally {
       setTranslating(null);
+    }
+  };
+
+  const translateDescription = async (skuKey: string) => {
+    const text = skuOverrides[skuKey]?.description;
+    if (!text) return;
+    setTranslatingDesc(skuKey);
+    try {
+      const res = await fetch("/api/ai-models/translate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text }),
+      });
+      const data = await res.json();
+      if (data.translated) {
+        setSkuOverrides((prev) => ({
+          ...prev,
+          [skuKey]: { ...prev[skuKey], description: data.translated },
+        }));
+      }
+    } catch {
+      /* ignore */
+    } finally {
+      setTranslatingDesc(null);
     }
   };
 
@@ -647,7 +726,29 @@ export default function PublishPage() {
                       </div>
                     </dl>
                     <div className="flex flex-col gap-2">
-                      <Label>目标站点</Label>
+                      <Label>投放站点（可多选）</Label>
+                      <div className="flex flex-wrap gap-4">
+                        {availableSites.length > 0 ? availableSites.map((site) => (
+                          <label key={site} className="flex items-center gap-2 text-sm cursor-pointer">
+                            <input
+                              type="checkbox"
+                              className="h-4 w-4"
+                              checked={selectedSites.includes(site)}
+                              onChange={() => {
+                                setSelectedSites((prev) =>
+                                  prev.includes(site)
+                                    ? prev.filter((s) => s !== site)
+                                    : [...prev, site]
+                                );
+                              }}
+                            />
+                            {site === "MLB" ? "Brazil (MLB)" : site === "MLM" ? "Mexico (MLM)" : site === "MLC" ? "Chile (MLC)" : site === "MCO" ? "Colombia (MCO)" : site}
+                          </label>
+                        )) : <span className="text-sm text-muted-foreground">加载中...</span>}
+                      </div>
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      <Label>分类搜索站点</Label>
                       <Select
                         value={siteId}
                         onValueChange={(v) => {
@@ -910,6 +1011,8 @@ export default function PublishPage() {
                               main: {
                                 ...prev.main,
                                 title: e.target.value,
+                                description:
+                                  prev.main?.description || "",
                                 price:
                                   prev.main?.price || "",
                                 quantity:
@@ -996,6 +1099,8 @@ export default function PublishPage() {
                               price: e.target.value,
                               title:
                                 prev.main?.title || "",
+                              description:
+                                prev.main?.description || "",
                               quantity:
                                 prev.main?.quantity ||
                                 "100",
@@ -1024,6 +1129,8 @@ export default function PublishPage() {
                               quantity: e.target.value,
                               title:
                                 prev.main?.title || "",
+                              description:
+                                prev.main?.description || "",
                               price:
                                 prev.main?.price || "",
                               pictureIds:
@@ -1034,6 +1141,101 @@ export default function PublishPage() {
                         }
                       />
                     </div>
+                    </div>
+
+                    <div className="mt-3 flex flex-col gap-2">
+                      <Label>描述</Label>
+                      <Textarea
+                        value={
+                          skuOverrides.main?.description || ""
+                        }
+                        onChange={(e) =>
+                          setSkuOverrides((prev) => ({
+                            ...prev,
+                            main: {
+                              ...prev.main,
+                              description: e.target.value,
+                            },
+                          }))
+                        }
+                        rows={6}
+                      />
+                      <div className="flex justify-end">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() =>
+                            translateDescription("main")
+                          }
+                          disabled={
+                            translatingDesc === "main"
+                          }
+                        >
+                          {translatingDesc === "main"
+                            ? "翻译中..."
+                            : "翻译描述"}
+                        </Button>
+                      </div>
+                    </div>
+
+                    <div className="mt-3 flex gap-4 items-end">
+                    <div className="flex flex-col gap-2">
+                      <Label>上架类型</Label>
+                      <Select
+                        value={skuOverrides.main?.listingTypeId || "gold_special"}
+                        onValueChange={(v) =>
+                          setSkuOverrides((prev) => ({
+                            ...prev,
+                            main: { ...prev.main, listingTypeId: v },
+                          }))
+                        }
+                      >
+                        <SelectTrigger className="w-40">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="gold_special">Classic (gold_special)</SelectItem>
+                          <SelectItem value="gold_pro">Premium (gold_pro)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      <Label>保修类型</Label>
+                      <Select
+                        value={skuOverrides.main?.warrantyTypeId || "6150835"}
+                        onValueChange={(v) =>
+                          setSkuOverrides((prev) => ({
+                            ...prev,
+                            main: { ...prev.main, warrantyTypeId: v },
+                          }))
+                        }
+                      >
+                        <SelectTrigger className="w-40">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="6150835">No warranty</SelectItem>
+                          <SelectItem value="2230279">Factory warranty</SelectItem>
+                          <SelectItem value="2230278">Seller warranty</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    {skuOverrides.main?.warrantyTypeId && skuOverrides.main.warrantyTypeId !== "6150835" ? (
+                      <div className="flex flex-col gap-2">
+                        <Label>保修时长</Label>
+                        <Input
+                          className="w-32"
+                          placeholder="如: 30 days"
+                          value={skuOverrides.main?.warrantyTime || ""}
+                          onChange={(e) =>
+                            setSkuOverrides((prev) => ({
+                              ...prev,
+                              main: { ...prev.main, warrantyTime: e.target.value },
+                            }))
+                          }
+                        />
+                      </div>
+                    ) : null}
                   </div>
 
                   {categoryAttrs.length > 0 ? (
@@ -1061,6 +1263,7 @@ export default function PublishPage() {
                             const mainOverride =
                               skuOverrides.main || {
                                 title: "",
+                                description: "",
                                 price: "",
                                 quantity: "100",
                                 pictureIds: [],
@@ -1304,15 +1507,15 @@ export default function PublishPage() {
                               </InputGroupAddon>
                             </InputGroup>
                           </div>
-                          {(bundle?.skuLocalImages?.[
-                            sku.key
-                          ] || []).length > 0 ? (
-                            <div className="flex items-end gap-1 pb-1">
-                              {(
-                                bundle?.skuLocalImages?.[
-                                  sku.key
-                                ] || []
-                              ).map((url, j) => (
+{(bundle?.skuLocalImages?.[
+                             sku.key
+                           ] || localImages).length > 0 ? (
+                             <div className="flex items-end gap-1 pb-1">
+                               {(
+                                 bundle?.skuLocalImages?.[
+                                   sku.key
+                                 ] || localImages
+                               ).map((url, j) => (
                                 <div
                                   key={j}
                                   className="flex flex-col items-center gap-0.5"
@@ -1395,6 +1598,104 @@ export default function PublishPage() {
                               }
                             />
                           </div>
+                        </div>
+
+                        <div className="mt-3 flex flex-col gap-2">
+                          <Label>描述</Label>
+                          <Textarea
+                            value={override.description || ""}
+                            onChange={(e) =>
+                              setSkuOverrides((prev) => ({
+                                ...prev,
+                                [sku.key]: {
+                                  ...override,
+                                  description:
+                                    e.target.value,
+                                },
+                              }))
+                            }
+                            rows={6}
+                          />
+                          <div className="flex justify-end">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() =>
+                                translateDescription(
+                                  sku.key,
+                                )
+                              }
+                              disabled={
+                                translatingDesc ===
+                                sku.key
+                              }
+                            >
+                              {translatingDesc ===
+                              sku.key
+                                ? "翻译中..."
+                                : "翻译描述"}
+                            </Button>
+                          </div>
+                        </div>
+
+                        <div className="mt-3 flex gap-4 items-end">
+                          <div className="flex flex-col gap-2">
+                            <Label>上架类型</Label>
+                            <Select
+                              value={override.listingTypeId || "gold_special"}
+                              onValueChange={(v) =>
+                                setSkuOverrides((prev) => ({
+                                  ...prev,
+                                  [sku.key]: { ...override, listingTypeId: v },
+                                }))
+                              }
+                            >
+                              <SelectTrigger className="w-40">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="gold_special">Classic (gold_special)</SelectItem>
+                                <SelectItem value="gold_pro">Premium (gold_pro)</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="flex flex-col gap-2">
+                            <Label>保修类型</Label>
+                            <Select
+                              value={override.warrantyTypeId || "6150835"}
+                              onValueChange={(v) =>
+                                setSkuOverrides((prev) => ({
+                                  ...prev,
+                                  [sku.key]: { ...override, warrantyTypeId: v },
+                                }))
+                              }
+                            >
+                              <SelectTrigger className="w-40">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="6150835">No warranty</SelectItem>
+                                <SelectItem value="2230279">Factory warranty</SelectItem>
+                                <SelectItem value="2230278">Seller warranty</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          {override.warrantyTypeId && override.warrantyTypeId !== "6150835" ? (
+                            <div className="flex flex-col gap-2">
+                              <Label>保修时长</Label>
+                              <Input
+                                className="w-32"
+                                placeholder="如: 30 days"
+                                value={override.warrantyTime || ""}
+                                onChange={(e) =>
+                                  setSkuOverrides((prev) => ({
+                                    ...prev,
+                                    [sku.key]: { ...override, warrantyTime: e.target.value },
+                                  }))
+                                }
+                              />
+                            </div>
+                          ) : null}
                         </div>
 
                         {categoryAttrs.length > 0 ? (
@@ -1533,7 +1834,7 @@ export default function PublishPage() {
                 </div>
               )}
 
-              <div className="flex flex-wrap gap-3">
+              <div className="sticky bottom-0 bg-background pt-3 flex justify-end gap-3">
                 <Button
                   onClick={handlePublish}
                   disabled={publishing || !mlCategoryId}

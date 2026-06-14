@@ -1,5 +1,5 @@
 import { exchangeCode } from "@/lib/mercadolibre/auth";
-import { getMLAccount, saveMLAccount, updateMLAccount } from "@/lib/db";
+import { getMLAccount, saveMLAccount, updateMLAccount, updateMLAccountTags } from "@/lib/db";
 import { getBaseUrl } from "@/lib/url";
 import type { MLUserResponse } from "@/lib/mercadolibre/types";
 
@@ -54,11 +54,8 @@ export async function GET(request: Request) {
     }
 
     const user = oauthRes.site_id
-      ? { site_id: oauthRes.site_id, nickname: oauthRes.nickname ?? String(oauthRes.user_id) }
-      : await fetchMLUser(oauthRes.access_token).then(u => ({
-          site_id: u.site_id,
-          nickname: u.nickname,
-        }));
+      ? { site_id: oauthRes.site_id, nickname: oauthRes.nickname ?? String(oauthRes.user_id), tags: oauthRes.nickname ? [] as string[] : [] as string[] }
+      : await fetchMLUser(oauthRes.access_token);
 
     const existing = getMLAccount();
     if (existing) {
@@ -67,6 +64,9 @@ export async function GET(request: Request) {
         refreshToken: oauthRes.refresh_token,
         tokenExpiresAt,
       });
+      if (user.tags && user.tags.length > 0) {
+        updateMLAccountTags(oauthRes.user_id, user.tags);
+      }
     } else {
       saveMLAccount({
         mlUserId: oauthRes.user_id,
@@ -75,6 +75,7 @@ export async function GET(request: Request) {
         refreshToken: oauthRes.refresh_token,
         tokenExpiresAt,
         nickname: user.nickname,
+        tags: JSON.stringify(user.tags ?? []),
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       });

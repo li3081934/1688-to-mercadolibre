@@ -30,6 +30,8 @@ type AuthStatus = {
   siteId?: string;
   nickname?: string;
   tokenExpiresAt?: string;
+  tags?: string[];
+  isUserProductSeller?: boolean;
 };
 
 type Category = {
@@ -57,6 +59,13 @@ export default function MercadoLibrePage() {
   const [message, setMessage] = useState<{
     type: string;
     text: string;
+  } | null>(null);
+  const [fetchingTags, setFetchingTags] = useState(false);
+  const [tagsResult, setTagsResult] = useState<{
+    parentTags: string[];
+    allTags: string[];
+    isUserProductSeller: boolean;
+    userType?: string;
   } | null>(null);
 
   useEffect(() => {
@@ -125,6 +134,25 @@ export default function MercadoLibrePage() {
     }
   };
 
+  const handleFetchTags = async () => {
+    setFetchingTags(true);
+    setTagsResult(null);
+    try {
+      const res = await fetch("/api/mercadolibre/fetch-tags");
+      const data = await res.json();
+      if (data.success) {
+        setTagsResult(data.data);
+        toast.success("用户标签获取成功");
+      } else {
+        toast.error(data.message || "获取失败");
+      }
+    } catch {
+      toast.error("获取用户标签失败");
+    } finally {
+      setFetchingTags(false);
+    }
+  };
+
   return (
     <main className="flex flex-col gap-4">
       <div className="grid-2">
@@ -187,7 +215,75 @@ export default function MercadoLibrePage() {
                   <a href={auth.authUrl}>
                     <Button variant="outline">重新授权</Button>
                   </a>
+                  <Button
+                    onClick={handleFetchTags}
+                    disabled={fetchingTags}
+                    variant="secondary"
+                    className="ml-2"
+                  >
+                    {fetchingTags ? "获取中..." : "检查用户标签"}
+                  </Button>
                 </div>
+
+                {tagsResult ? (
+                  <div className="rounded-lg border p-3 space-y-3">
+                    <div>
+                      <h4 className="text-sm font-medium mb-2">
+                        用户标签
+                        {tagsResult.isUserProductSeller ? (
+                          <span className="ml-2 inline-flex items-center rounded-full bg-yellow-100 px-2 py-0.5 text-xs font-medium text-yellow-800">
+                            user_product_seller
+                          </span>
+                        ) : null}
+                      </h4>
+
+                      <p className="text-xs text-muted-foreground mb-1">
+                        CBT 父账号标签:
+                      </p>
+                      {tagsResult.parentTags.length > 0 ? (
+                        <div className="flex flex-wrap gap-1">
+                          {tagsResult.parentTags.map((tag) => (
+                            <span
+                              key={tag}
+                              className="inline-flex items-center rounded-full bg-secondary px-2 py-0.5 text-xs font-medium text-secondary-foreground"
+                            >
+                              {tag}
+                            </span>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-xs text-muted-foreground">无</p>
+                      )}
+
+                      <p className="text-xs text-muted-foreground mt-2 mb-1">
+                        含子站点合并标签:
+                      </p>
+                      {tagsResult.allTags.length > 0 ? (
+                        <div className="flex flex-wrap gap-1">
+                          {tagsResult.allTags.map((tag) => {
+                            const isChildOnly = !tagsResult.parentTags.includes(tag);
+                            return (
+                              <span
+                                key={tag}
+                                className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
+                                  isChildOnly
+                                    ? "bg-blue-100 text-blue-800"
+                                    : "bg-secondary text-secondary-foreground"
+                                }`}
+                                title={isChildOnly ? "仅子站点有" : undefined}
+                              >
+                                {tag}
+                                {isChildOnly ? " *" : null}
+                              </span>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <p className="text-xs text-muted-foreground">无</p>
+                      )}
+                    </div>
+                  </div>
+                ) : null}
               </div>
             ) : (
               <div className="flex flex-col gap-3">

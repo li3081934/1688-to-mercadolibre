@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { getProductById, updateProduct } from "@/lib/db";
-import { createItem } from "@/lib/mercadolibre/client";
+import { createItem, getMarketplaceUsers } from "@/lib/mercadolibre/client";
 import {
   buildItemDescription,
   buildItemPrice,
@@ -19,15 +19,20 @@ export const runtime = "nodejs";
 type SkuOverride = {
   skuKey: string;
   title?: string;
+  description?: string;
   price?: number;
   quantity?: number;
-  pictureIds?: string[];
+  pictureIds: string[];
   attributes?: Array<{ id: string; value_name: string }>;
+  warrantyTypeId?: string;
+  warrantyTime?: string;
+  listingTypeId?: "gold_special" | "gold_pro";
 };
 
 type PublishRequestBody = {
   productId: string;
   mlCategoryId: string;
+  sites?: string[];
   skus?: SkuOverride[];
 };
 
@@ -43,7 +48,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const { token } = await getValidToken();
+    const { token, mlUserId } = await getValidToken();
 
     const product = getProductById(productId);
     if (!product) {
@@ -54,10 +59,17 @@ export async function POST(request: Request) {
     }
 
     const bundle = await parseProductBundle(product.extractedDir);
-    const sitesToSell = buildSitesToSell([]);
-    const saleTerms = buildSaleTerms();
+
+    const marketplaceData = await getMarketplaceUsers(token, mlUserId);
+    let targetMarketplaces = marketplaceData.marketplaces
+      .filter((m) => m.logistic_type !== "fulfillment")
+      .map((m) => m.site_id);
+    if (body.sites && body.sites.length > 0) {
+      const selected = new Set(body.sites);
+      targetMarketplaces = targetMarketplaces.filter((s) => selected.has(s));
+    }
+
     const basePictures = getPicturesArray(bundle.mainProduct);
-    const baseDescription = buildItemDescription(bundle.mainProduct);
 
     const skuOverrideMap = new Map(skus.map((s) => [s.skuKey, s]));
     const results: Array<{
@@ -79,14 +91,16 @@ export async function POST(request: Request) {
       const skuTitle = override?.title || `${familyName} - ${skuItem.label}`;
       const skuPrice = override?.price ?? buildItemPrice(skuItem.product);
       const skuQty = override?.quantity ?? buildAvailableQuantity(bundle.mainProduct, [skuItem.product]);
-      const skuPictures = (override?.pictureIds && override.pictureIds.length > 0)
+      const skuPictures = override?.pictureIds?.length
         ? override.pictureIds.map((id) => ({ id }))
-        : getPicturesArray(skuItem.product).length > 0
-        ? getPicturesArray(skuItem.product)
         : basePictures;
       const skuAttributes = (override?.attributes && override.attributes.length > 0)
         ? override.attributes
         : buildAttributes(skuItem.product, skuItem.skuId);
+      const skuDescription = override?.description?.trim() || buildItemDescription(bundle.mainProduct);
+
+      const saleTerms = buildSaleTerms(override?.warrantyTypeId, override?.warrantyTime);
+      const sitesToSell = buildSitesToSell(targetMarketplaces, override?.listingTypeId);
 
       const itemPayload = {
         sites_to_sell: sitesToSell,
@@ -101,7 +115,7 @@ export async function POST(request: Request) {
         attributes: skuAttributes,
         sale_terms: saleTerms,
         description: {
-          plain_text: baseDescription,
+          plain_text: skuDescription,
         },
       };
 
@@ -153,7 +167,6 @@ export async function POST(request: Request) {
         updateProduct(body.productId, { lastError: message });
       }
     } catch {
-      // ignore
     }
     return NextResponse.json(
       { success: false, message },

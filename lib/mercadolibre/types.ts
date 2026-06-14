@@ -14,6 +14,7 @@ export type MLAccount = {
   refreshToken: string;
   tokenExpiresAt: string;
   nickname: string;
+  tags: string;
   createdAt: string;
   updatedAt: string;
 };
@@ -42,6 +43,8 @@ export type MLUserResponse = {
   site_id: string;
   nickname: string;
   email?: string;
+  tags?: string[];
+  user_type?: string;
 };
 
 export type MLRefreshResponse = {
@@ -95,12 +98,21 @@ export type MLCreateItemRequest = {
 
 /**
  * Global Selling (CBT) 创建商品响应
+ * 注意: site_items 可能包含 error 而非 item_id
  */
 export type MLCreateItemResponse = {
-  item_id: string;
+  item_id?: string;
+  site_id?: string;
   site_items: Array<{
     site_id: string;
-    item_id: string;
+    item_id?: string;
+    logistic_type?: string;
+    error?: {
+      message: string;
+      error: string;
+      status: number;
+      cause: Array<unknown>;
+    };
   }>;
 };
 
@@ -118,6 +130,16 @@ export type MLPredictedCategory = {
   category_id: string;
   category_name: string;
   attributes?: Array<{ id: string; value_id?: string; value_name: string }>;
+};
+
+export type MLMarketplaceUserResponse = {
+  user_id: number;
+  site_id: string;
+  marketplaces: Array<{
+    user_id: number;
+    site_id: string;
+    logistic_type: string;
+  }>;
 };
 
 export type MLCategoryAttribute = {

@@ -5,6 +5,7 @@ export type ValidTokenResult = {
   token: string;
   siteId: string;
   accountId: number;
+  mlUserId: number;
 };
 
 /**
@@ -33,6 +34,7 @@ export async function getValidToken(): Promise<ValidTokenResult> {
       token: refreshRes.access_token,
       siteId: account.siteId,
       accountId: account.id,
+      mlUserId: account.mlUserId,
     };
   }
 
@@ -40,5 +42,6 @@ export async function getValidToken(): Promise<ValidTokenResult> {
     token: account.accessToken,
     siteId: account.siteId,
     accountId: account.id,
+    mlUserId: account.mlUserId,
   };
 }
