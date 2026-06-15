@@ -16,6 +16,7 @@ export async function GET() {
 
     return NextResponse.json({
       authenticated: true,
+      authUrl: getAuthUrl(),
       mlUserId: account.mlUserId,
       siteId: account.siteId,
       nickname: account.nickname,

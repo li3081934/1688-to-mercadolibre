@@ -8,3 +8,5 @@ storage/
 *.tsbuildinfo
 docs/
 .claude/
+exp.txt
+
