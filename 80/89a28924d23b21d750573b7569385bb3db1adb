@@ -1,0 +1,50 @@
+components/sidebar.tsx
+  s_144bf89dcfa776::t_c1bac3c9df0490 13,36-40
+lib/mercadolibre/types.ts
+  s_144bf89dcfa776::t_abda6d10da1c97 216
+app/api/mercadolibre/categories/search/route.ts
+  s_144bf89dcfa776::t_00e32d473acbf6 4,46-48,52-53,55-58,60-66
+  s_144bf89dcfa776::t_5171ff7bf2f96f 36-45,49-51,54,59
+app/api/mercadolibre/categories/[categoryId]/attributes/route.ts
+  s_144bf89dcfa776::t_00e32d473acbf6 4,19-44
+app/api/translation-cache/[id]/route.ts
+  h_04504ebe54ce64 1-43
+app/products/[id]/publish/page.tsx
+  s_144bf89dcfa776::t_abda6d10da1c97 75,1177-1179,1428-1430
+  s_144bf89dcfa776::t_7d055235379fc9 348-363,370
+  s_144bf89dcfa776::t_f4bbdf0a5f5018 1228,1490-1491
+  s_144bf89dcfa776::t_372df4ce306cf7 1414,1492-1494
+  s_144bf89dcfa776::t_57489bb67d1033 68,72,74,128-129,131,135-139
+  s_144bf89dcfa776::t_3b757c7e5f7781 1163,1229-1231
+  s_144bf89dcfa776::t_85295de542969a 893,902,909,911,913,915
+app/translation-cache/page.tsx
+  h_04504ebe54ce64 1-324
+lib/db.ts
+  s_144bf89dcfa776::t_29146da7f5fcc5 220-235,266-336
+  s_144bf89dcfa776::t_fe276b713bc209 103-115,211-219,236-265,337-338
+lib/mercadolibre/translation.ts
+  h_04504ebe54ce64 1-136
+app/api/translation-cache/route.ts
+  h_04504ebe54ce64 1-61
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "8089a28924d23b21d750573b7569385bb3db1adb",
+  "prompts": {},
+  "humans": {
+    "h_04504ebe54ce64": {
+      "author": "lijs8 <lijs8@lenovo.com>"
+    }
+  },
+  "sessions": {
+    "s_144bf89dcfa776": {
+      "agent_id": {
+        "tool": "github-copilot",
+        "id": "1da6b284-3263-42c1-b9ab-2930227de36e",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "lijs8 <lijs8@lenovo.com>"
+    }
+  }
+}
