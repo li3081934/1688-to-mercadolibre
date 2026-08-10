@@ -1,6 +1,12 @@
 import { NextResponse } from "next/server";
+import { randomUUID } from "node:crypto";
 
-import { createMLUserProduct, getProductById, updateProduct } from "@/lib/db";
+import {
+  createMLUserProduct,
+  getProductById,
+  updateProduct,
+  upsertMLPublishedProductMapping,
+} from "@/lib/db";
 import { createUPItem, getMarketplaceUsers } from "@/lib/mercadolibre/client";
 import {
   buildAvailableQuantity,
@@ -18,8 +24,7 @@ export const runtime = "nodejs";
 
 type SkuOverride = {
   skuKey: string;
-  price?: number;
-  quantity?: number;
+  siteConfigs: Record<string, { price?: number; quantity?: number }>;
   pictureIds: string[];
   attributes?: Array<{ id: string; value_name: string; value_id?: string }>;
   warrantyTypeId?: string;
@@ -78,11 +83,19 @@ export async function POST(request: Request) {
       }
     }
 
+    if (targetMarketplaces.length === 0) {
+      return NextResponse.json(
+        { success: false, message: "至少选择一个有效的发布站点。" },
+        { status: 400 },
+      );
+    }
+
     const skuOverrideMap = new Map(skus.map((s) => [s.skuKey, s]));
     const results: Array<{
       skuKey: string;
       skuLabel: string;
       success: boolean;
+      partial?: boolean;
       mlItemId?: string;
       sitelessUserProductId?: string;
       familyId?: string;
@@ -93,17 +106,22 @@ export async function POST(request: Request) {
     const skuItemsToPublish = (bundle.skuItems.length > 0 ? bundle.skuItems : [{ key: "main", skuId: product.offerId, label: product.title, product: bundle.mainProduct }])
       .filter((item) => requestedKeys.size === 0 || requestedKeys.has(item.key));
 
+    if (skuItemsToPublish.length === 0) {
+      return NextResponse.json(
+        { success: false, message: "至少选择一个要发布的 SKU。" },
+        { status: 400 },
+      );
+    }
+
     const autoFamilyName = buildFamilyName(bundle.mainProduct, product.title);
     const familyName = bodyFamilyName?.trim() || autoFamilyName;
     const globalDescription = description?.trim() ?? "";
 
     for (const skuItem of skuItemsToPublish) {
       const override = skuOverrideMap.get(skuItem.key);
+      const generatedSku = `MER${randomUUID().replace(/-/g, "").slice(0, 8)}`;
 
       // UP 模式: 使用 family_name, 图片只用 id, 无 variations
-      const skuQty = override?.quantity ?? buildAvailableQuantity(bundle.mainProduct, [skuItem.product]);
-      const skuPrice = override?.price ?? buildItemPrice(skuItem.product);
-
       const skuPictures = override?.pictureIds?.length
         ? override.pictureIds.map((id) => ({ id }))
         : [];
@@ -120,45 +138,84 @@ export async function POST(request: Request) {
       const skuAttributes = (override?.attributes && override.attributes.length > 0)
         ? override.attributes
         : buildUPAttributes(skuItem.product, skuItem.skuId);
-      if (!skuAttributes.find((a) => a.id === "ITEM_CONDITION")) {
-        skuAttributes.unshift({
+      const requestAttributes = skuAttributes.filter((attribute) => attribute.id !== "SELLER_SKU");
+      if (!requestAttributes.find((a) => a.id === "ITEM_CONDITION")) {
+        requestAttributes.unshift({
           id: "ITEM_CONDITION",
           values: [{ id: "2230284", name: "New" }],
         });
       }
+      requestAttributes.push({ id: "SELLER_SKU", value_name: generatedSku });
 
-      const saleTerms = buildSaleTerms(override?.warrantyTypeId, override?.warrantyTime);
-      const sitesToSell = buildSitesToSell(targetMarketplaces, override?.listingTypeId);
-
-      const sitesToSellWithPrice = sitesToSell.map((s) => ({
-        ...s,
-        net_proceeds: skuPrice,
-      }));
-
-      const itemPayload = {
-        sites_to_sell: sitesToSellWithPrice,
-        family_name: familyName,
-        category_id: mlCategoryId,
-        available_quantity: skuQty,
-        pictures: skuPictures,
-        attributes: skuAttributes,
-        sale_terms: saleTerms,
-        description: {
-          plain_text: globalDescription,
-        },
-      };
-
-      try {
-        const createdItem = await createUPItem(token, itemPayload);
+      const siteConfigs = override?.siteConfigs || {};
+      const missingConfig = targetMarketplaces.find((siteId) => {
+        const config = siteConfigs[siteId];
+        return !config || !Number.isFinite(config.price) || (config.price ?? 0) <= 0 || !Number.isInteger(config.quantity) || (config.quantity ?? 0) <= 0;
+      });
+      if (missingConfig) {
         results.push({
           skuKey: skuItem.key,
           skuLabel: skuItem.label,
-          success: true,
-          mlItemId: createdItem.item_id,
-          sitelessUserProductId: createdItem.siteless_user_product_id,
-          familyId: createdItem.siteless_family_id?.toString(),
+          success: false,
+          error: `站点 ${missingConfig} 缺少有效的价格或库存配置。`,
         });
+        continue;
+      }
 
+      const quantities = targetMarketplaces.map((siteId) => siteConfigs[siteId]!.quantity as number);
+      const sharedQuantity = quantities[0];
+      if (quantities.some((quantity) => quantity !== sharedQuantity)) {
+        results.push({
+          skuKey: skuItem.key,
+          skuLabel: skuItem.label,
+          success: false,
+          error: "该 SKU 的库存是跨站点共享的，所有站点必须使用相同库存。",
+        });
+        continue;
+      }
+
+      const sitesToSell = buildSitesToSell(targetMarketplaces, override?.listingTypeId).map((site) => ({
+        ...site,
+        net_proceeds: siteConfigs[site.site_id]!.price as number,
+      }));
+      const itemPayload = {
+        sites_to_sell: sitesToSell,
+        family_name: familyName,
+        category_id: mlCategoryId,
+        available_quantity: sharedQuantity,
+        pictures: skuPictures,
+        attributes: requestAttributes,
+        sale_terms: buildSaleTerms(override?.warrantyTypeId, override?.warrantyTime),
+        description: { plain_text: globalDescription },
+      };
+
+      let createdItem: Awaited<ReturnType<typeof createUPItem>> | null = null;
+      let publishError: string | undefined;
+      try {
+        createdItem = await createUPItem(token, itemPayload);
+      } catch (err) {
+        publishError = err instanceof Error ? err.message : "UP 刊登失败";
+      }
+
+      const siteResults = createdItem?.site_items || [];
+      const successfulSiteItems = siteResults.filter((site) => site.item_id && !site.error);
+      const siteErrors = siteResults
+        .filter((site) => !site.item_id || site.error)
+        .map((site) => `[${site.site_id}] ${site.error?.error || site.error?.message || "接口未返回商品 ID"}`);
+      const successful = successfulSiteItems.length > 0;
+      results.push({
+        skuKey: skuItem.key,
+        skuLabel: skuItem.label,
+        success: successful,
+        partial: successful && siteErrors.length > 0,
+        mlItemId: createdItem?.item_id,
+        sitelessUserProductId: createdItem?.siteless_user_product_id,
+        familyId: createdItem?.siteless_family_id?.toString(),
+        error: publishError || (siteErrors.length > 0 ? siteErrors.join("; ") : undefined),
+      });
+
+      if (createdItem && successful) {
+        const now = new Date().toISOString();
         createMLUserProduct({
           productId,
           skuKey: skuItem.key,
@@ -166,28 +223,37 @@ export async function POST(request: Request) {
           familyId: createdItem.siteless_family_id?.toString() || null,
           familyName,
           cbtItemId: createdItem.item_id || null,
-          siteItems: JSON.stringify(createdItem.site_items || []),
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
+          siteItems: JSON.stringify(siteResults),
+          createdAt: now,
+          updatedAt: now,
         });
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : "UP 刊登失败";
-        results.push({
+        upsertMLPublishedProductMapping({
+          productId,
           skuKey: skuItem.key,
-          skuLabel: skuItem.label,
-          success: false,
-          error: msg,
+          sourceSku: skuItem.skuId,
+          sellerSku: generatedSku,
+          sitelessUserProductId: createdItem.siteless_user_product_id || null,
+          cbtItemId: createdItem.item_id || null,
+          parentUserProductId: createdItem.parent_user_product_id || null,
+          familyId: createdItem.siteless_family_id?.toString() || null,
+          siteItems: JSON.stringify(siteResults),
+          createdAt: now,
+          updatedAt: now,
         });
       }
     }
 
     const successResults = results.filter((r) => r.success);
+    const partialResults = results.filter((r) => r.partial);
     if (successResults.length > 0) {
       const firstUP = results.find((r) => r.sitelessUserProductId);
       updateProduct(productId, {
-        mlItemId: successResults.map((r) => r.mlItemId).join(","),
+        mlItemId: successResults
+          .map((r) => r.mlItemId)
+          .filter((id): id is string => Boolean(id))
+          .join(","),
         isListed: 1,
-        status: successResults.length === results.length ? "listed" : "partial",
+        status: successResults.length === results.length && partialResults.length === 0 ? "listed" : "partial",
         publishModel: "user_product",
         familyName,
         userProductId: firstUP?.sitelessUserProductId || null,

@@ -145,6 +145,21 @@ export type MLUserProductRecord = {
   updatedAt: string;
 };
 
+export type MLPublishedProductMapping = {
+  id: number;
+  productId: string;
+  skuKey: string;
+  sourceSku: string;
+  sellerSku: string;
+  sitelessUserProductId: string | null;
+  cbtItemId: string | null;
+  parentUserProductId: string | null;
+  familyId: string | null;
+  siteItems: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type ParsedProductBundle = {
   mainJsonPath: string;
   mainProduct: ExportJsonRecord;

@@ -26,7 +26,7 @@ export default function HomePage() {
           </p>
           <div className="flex flex-wrap gap-3">
             <Link href="/products">
-              <Button>进入商品管理</Button>
+              <Button>进入商品库管理</Button>
             </Link>
             <DownloadExtensionButton />
           </div>

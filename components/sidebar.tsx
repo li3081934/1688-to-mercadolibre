@@ -8,6 +8,7 @@ import {
   LayoutDashboard,
   Package,
   Globe,
+  ExternalLink,
   Brain,
   LogOut,
 } from "lucide-react";
@@ -19,7 +20,12 @@ const NAV_ITEMS: Array<{
   icon: React.ReactNode;
 }> = [
   { href: "/", label: "概览", icon: <LayoutDashboard className="h-4 w-4" /> },
-  { href: "/products", label: "商品管理", icon: <Package className="h-4 w-4" /> },
+  { href: "/products", label: "商品库管理", icon: <Package className="h-4 w-4" /> },
+  {
+    href: "/published-products",
+    label: "已上架商品",
+    icon: <ExternalLink className="h-4 w-4" />,
+  },
   {
     href: "/mercadolibre",
     label: "美客多集成",

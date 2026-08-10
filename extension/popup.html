@@ -32,6 +32,15 @@
         </div>
       </section>
 
+      <section class="sku-limit-config">
+        <label for="skuPromptLimit">SKU 采集提示上限</label>
+        <div class="sku-limit-row">
+          <input id="skuPromptLimit" class="sku-limit-input" type="number" min="1" step="1" value="10" />
+          <span>个</span>
+        </div>
+        <p>SKU 数量超过此上限时，采集前选择需要的 SKU。</p>
+      </section>
+
       <section class="result-card">
         <div class="result-row">
           <span>标题</span>
@@ -47,6 +56,28 @@
         </div>
       </section>
     </main>
+
+    <div id="skuPicker" class="modal-backdrop" hidden>
+      <section class="sku-picker" role="dialog" aria-modal="true" aria-labelledby="skuPickerTitle">
+        <div class="sku-picker-header">
+          <div>
+            <p class="eyebrow">SKU Selection</p>
+            <h2 id="skuPickerTitle">选择要采集的 SKU</h2>
+            <p id="skuPickerSummary" class="sku-picker-summary"></p>
+          </div>
+          <button id="skuPickerClose" class="icon-button" type="button" aria-label="取消">×</button>
+        </div>
+        <div class="sku-picker-toolbar">
+          <button id="selectAllSkusButton" class="select-all-button" type="button">全选</button>
+          <span id="selectedSkuCount" class="selected-sku-count"></span>
+        </div>
+        <div id="skuList" class="sku-list"></div>
+        <div class="sku-picker-actions">
+          <button id="cancelSkuButton" class="modal-secondary-button" type="button">取消采集</button>
+          <button id="confirmSkuButton" class="modal-primary-button" type="button">采集选中的 SKU</button>
+        </div>
+      </section>
+    </div>
 
     <script src="vendor/jszip.min.js"></script>
     <script src="popup.js"></script>

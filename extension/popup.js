@@ -6,6 +6,17 @@ const collectButton = document.getElementById("collectButton");
 const uploadButton = document.getElementById("uploadButton");
 const serverUrlInput = document.getElementById("serverUrl");
 const saveUrlButton = document.getElementById("saveUrlButton");
+const skuPromptLimitInput = document.getElementById("skuPromptLimit");
+const skuPicker = document.getElementById("skuPicker");
+const skuPickerSummary = document.getElementById("skuPickerSummary");
+const skuList = document.getElementById("skuList");
+const selectedSkuCount = document.getElementById("selectedSkuCount");
+const selectAllSkusButton = document.getElementById("selectAllSkusButton");
+const confirmSkuButton = document.getElementById("confirmSkuButton");
+const cancelSkuButton = document.getElementById("cancelSkuButton");
+const skuPickerClose = document.getElementById("skuPickerClose");
+
+let pendingSkuSelection = null;
 
 function normalizeWhitespace(value) {
   return String(value || "").replace(/\s+/g, " ").trim();
@@ -41,6 +52,32 @@ async function loadServerUrl() {
   } catch {
     // storage not available
   }
+}
+
+async function loadSkuPromptLimit() {
+  try {
+    const result = await chrome.storage.sync.get(["skuPromptLimit"]);
+    const limit = Number.parseInt(result.skuPromptLimit, 10);
+    if (Number.isInteger(limit) && limit > 0) {
+      skuPromptLimitInput.value = String(limit);
+    }
+  } catch {
+    // storage not available
+  }
+}
+
+async function getSkuPromptLimit() {
+  const value = Number.parseInt(skuPromptLimitInput.value, 10);
+  const limit = Number.isInteger(value) && value > 0 ? value : 10;
+  skuPromptLimitInput.value = String(limit);
+
+  try {
+    await chrome.storage.sync.set({ skuPromptLimit: limit });
+  } catch {
+    // storage not available
+  }
+
+  return limit;
 }
 
 async function saveServerUrl() {
@@ -317,6 +354,97 @@ function getSkuPackages(data) {
   return Array.isArray(data?.skuPackages) ? data.skuPackages : [];
 }
 
+function getSkuLabel(skuPackage) {
+  return skuPackage.specAttrs || skuPackage.options?.join(" / ") || skuPackage.skuId || "未命名 SKU";
+}
+
+function updateSelectedSkuCount() {
+  if (!pendingSkuSelection) {
+    return;
+  }
+
+  const checkedCount = skuList.querySelectorAll("input[type='checkbox']:checked").length;
+  selectedSkuCount.textContent = `已选择 ${checkedCount} / ${pendingSkuSelection.skuPackages.length}`;
+  confirmSkuButton.disabled = checkedCount === 0;
+  selectAllSkusButton.textContent = checkedCount === pendingSkuSelection.skuPackages.length ? "取消全选" : "全选";
+}
+
+function closeSkuPicker() {
+  skuPicker.hidden = true;
+  pendingSkuSelection?.resolve(null);
+  pendingSkuSelection = null;
+}
+
+function openSkuPicker(skuPackages, limit) {
+  return new Promise((resolve) => {
+    pendingSkuSelection = { resolve, skuPackages };
+
+    skuPickerSummary.textContent = `当前共有 ${skuPackages.length} 个 SKU，已超过提示上限 ${limit} 个，请选择要采集的 SKU。`;
+    skuList.replaceChildren();
+
+    skuPackages.forEach((skuPackage, index) => {
+      const label = document.createElement("label");
+      label.className = "sku-option";
+
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.value = skuPackage.skuId || String(index);
+      checkbox.checked = true;
+      checkbox.addEventListener("change", updateSelectedSkuCount);
+
+      const text = document.createElement("span");
+      text.className = "sku-option-text";
+      text.textContent = getSkuLabel(skuPackage);
+
+      const id = document.createElement("span");
+      id.className = "sku-option-id";
+      id.textContent = `SKU ID: ${skuPackage.skuId || "-"}`;
+      text.appendChild(id);
+
+      label.append(checkbox, text);
+      skuList.appendChild(label);
+    });
+
+    skuPicker.hidden = false;
+    updateSelectedSkuCount();
+  });
+}
+
+function getSelectedSkuIds() {
+  return new Set(Array.from(skuList.querySelectorAll("input[type='checkbox']:checked")).map((input) => input.value));
+}
+
+function filterSelectedSkus(data, selectedSkuIds) {
+  if (!selectedSkuIds) {
+    return data;
+  }
+
+  const selectedPackages = getSkuPackages(data).filter((skuPackage, index) => selectedSkuIds.has(skuPackage.skuId || String(index)));
+  return {
+    ...data,
+    source: {
+      ...data.source,
+      skuPackageCount: selectedPackages.length
+    },
+    skuPackages: selectedPackages
+  };
+}
+
+async function chooseSkusIfNeeded(data) {
+  const skuPackages = getSkuPackages(data);
+  const limit = await getSkuPromptLimit();
+  if (skuPackages.length <= limit) {
+    return data;
+  }
+
+  const selectedSkuIds = await openSkuPicker(skuPackages, limit);
+  if (!selectedSkuIds) {
+    throw new Error("已取消采集。");
+  }
+
+  return filterSelectedSkus(data, selectedSkuIds);
+}
+
 function getImageSignature(imageUrls) {
   return imageUrls.map((url) => String(url || "").trim()).filter(Boolean).join("|");
 }
@@ -354,12 +482,12 @@ async function fetchAsset(url) {
   };
 }
 
-async function addImagesToZip(folder, imageUrls, assetCache, data, bucketLabel) {
+async function addImagesToZip(folder, imageUrls, assetCache, data, bucketLabel, folderName = "images") {
   if (!imageUrls.length) {
     return 0;
   }
 
-  const imagesFolder = folder.folder("images");
+  const imagesFolder = folder.folder(folderName);
   let addedCount = 0;
 
   for (let index = 0; index < imageUrls.length; index += 1) {
@@ -416,6 +544,9 @@ async function buildZipBlob(data, filenameBase) {
   const skuPackages = getSkuPackages(data);
   const sharedImageUrls = getSharedImageUrls(skuPackages);
   const sharedImagesFolder = sharedImageUrls.length ? rootFolder.folder("shared-images") : null;
+  const productImages = Array.isArray(data?.product?.images) ? data.product.images : [];
+
+  await addImagesToZip(rootFolder, productImages, assetCache, data, "主图", "main-images");
 
   if (sharedImagesFolder) {
     await addImagesToZip(sharedImagesFolder, sharedImageUrls, assetCache, data, "共享图片");
@@ -434,8 +565,6 @@ async function buildZipBlob(data, filenameBase) {
         await addImagesToZip(skuFolder, Array.isArray(skuPackage.images) ? skuPackage.images : [], assetCache, data, `SKU ${skuPackage.skuId || folderName} 图片`);
       }
     }
-  } else {
-    await addImagesToZip(rootFolder, Array.isArray(data?.product?.images) ? data.product.images : [], assetCache, data, "主图");
   }
 
   const mainJsonData = { ...data };
@@ -537,8 +666,9 @@ async function collectAndDownload() {
   statusText.textContent = "正在采集页面信息...";
 
   try {
-    const { data, filenameBase } = await collectData();
-    await downloadZipPackage(data, filenameBase);
+    const collected = await collectData();
+    const data = await chooseSkusIfNeeded(collected.data);
+    await downloadZipPackage(data, collected.filenameBase);
     displayResult(data);
     statusText.textContent = "采集完成，ZIP 已触发下载。" + (
       Array.isArray(data.collectionWarnings) && data.collectionWarnings.length
@@ -558,8 +688,9 @@ async function collectAndUpload() {
   try {
     await saveServerUrl();
     statusText.textContent = "正在采集页面信息...";
-    const { data, filenameBase } = await collectData();
-    const message = await uploadZipToServer(data, filenameBase);
+    const collected = await collectData();
+    const data = await chooseSkusIfNeeded(collected.data);
+    const message = await uploadZipToServer(data, collected.filenameBase);
     displayResult(data);
     statusText.textContent = message;
   } catch (error) {
@@ -572,5 +703,27 @@ async function collectAndUpload() {
 collectButton.addEventListener("click", collectAndDownload);
 uploadButton.addEventListener("click", collectAndUpload);
 saveUrlButton.addEventListener("click", saveServerUrl);
+selectAllSkusButton.addEventListener("click", () => {
+  const checkboxes = skuList.querySelectorAll("input[type='checkbox']");
+  const shouldSelect = Array.from(checkboxes).some((checkbox) => !checkbox.checked);
+  checkboxes.forEach((checkbox) => {
+    checkbox.checked = shouldSelect;
+  });
+  updateSelectedSkuCount();
+});
+confirmSkuButton.addEventListener("click", () => {
+  if (!pendingSkuSelection) {
+    return;
+  }
+
+  const selectedSkuIds = getSelectedSkuIds();
+  const resolve = pendingSkuSelection.resolve;
+  skuPicker.hidden = true;
+  pendingSkuSelection = null;
+  resolve(selectedSkuIds);
+});
+cancelSkuButton.addEventListener("click", closeSkuPicker);
+skuPickerClose.addEventListener("click", closeSkuPicker);
 
 loadServerUrl();
+loadSkuPromptLimit();

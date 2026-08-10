@@ -36,6 +36,7 @@ export type MLCategory = {
   picture: string | null;
   total_items_in_this_category: number;
   children: MLCategory[];
+  path_from_root?: Array<{ id: string; name: string }>;
 };
 
 export type MLOAuthResponse = {
@@ -165,6 +166,7 @@ export type MLCreateItemResponse = {
   site_items: Array<{
     site_id: string;
     item_id?: string;
+    user_product_id?: string;
     logistic_type?: string;
     error?: {
       message: string;

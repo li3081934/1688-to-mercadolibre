@@ -2,6 +2,8 @@ node_modules/
 output/
 .next/
 storage/
+!app/api/storage/
+!app/api/storage/**
 .env
 .env.local
 .env.*.local

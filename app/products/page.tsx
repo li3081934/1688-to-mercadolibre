@@ -32,8 +32,8 @@ export default async function ProductsPage() {
       <div className="grid-2">
         <Card>
           <CardHeader>
-            <CardDescription>商品管理</CardDescription>
-            <CardTitle>商品管理</CardTitle>
+            <CardDescription>商品库管理</CardDescription>
+            <CardTitle>商品库管理</CardTitle>
           </CardHeader>
           <CardContent>
             <p className="text-muted-foreground">上传 ZIP，系统自动解压并识别商品数据。</p>
@@ -45,7 +45,7 @@ export default async function ProductsPage() {
 
       <Card>
         <CardHeader className="flex-row items-center justify-between">
-          <CardTitle>商品列表</CardTitle>
+          <CardTitle>商品库列表</CardTitle>
           <RefreshButton />
         </CardHeader>
         <CardContent>

@@ -7,6 +7,7 @@ import { getDatabasePath } from "@/lib/storage";
 import type {
   AIModel,
   MLUserProductRecord,
+  MLPublishedProductMapping,
   ProductListItem,
   ProductRecord,
 } from "@/lib/types";
@@ -67,6 +68,23 @@ function openDatabase() {
       siteItems TEXT DEFAULT '[]',
       createdAt TEXT NOT NULL,
       updatedAt TEXT NOT NULL,
+      FOREIGN KEY (productId) REFERENCES products(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS ml_published_product_mappings (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      productId TEXT NOT NULL,
+      skuKey TEXT NOT NULL,
+      sourceSku TEXT NOT NULL,
+      sellerSku TEXT NOT NULL UNIQUE,
+      sitelessUserProductId TEXT,
+      cbtItemId TEXT,
+      parentUserProductId TEXT,
+      familyId TEXT,
+      siteItems TEXT NOT NULL DEFAULT '[]',
+      createdAt TEXT NOT NULL,
+      updatedAt TEXT NOT NULL,
+      UNIQUE (productId, skuKey),
       FOREIGN KEY (productId) REFERENCES products(id)
     );
 
@@ -255,9 +273,10 @@ export function updateProduct(productId: string, patch: Partial<Omit<ProductReco
 }
 
 export function deleteProduct(productId: string) {
-  getDb()
-    .prepare("DELETE FROM products WHERE id = ?")
-    .run(productId);
+  const db = getDb();
+  db.prepare("DELETE FROM ml_published_product_mappings WHERE productId = ?").run(productId);
+  db.prepare("DELETE FROM ml_user_products WHERE productId = ?").run(productId);
+  db.prepare("DELETE FROM products WHERE id = ?").run(productId);
 }
 
 export function getMLAccount(): MLAccount | undefined {
@@ -343,6 +362,86 @@ export function createMLUserProduct(record: Omit<MLUserProductRecord, "id">) {
        VALUES (@productId, @skuKey, @sitelessUserProductId, @familyId, @familyName, @cbtItemId, @siteItems, @createdAt, @updatedAt)`
     )
     .run(record);
+}
+
+export function upsertMLPublishedProductMapping(
+  record: Omit<MLPublishedProductMapping, "id">
+) {
+  return getDb()
+    .prepare(
+      `INSERT INTO ml_published_product_mappings (
+         productId, skuKey, sourceSku, sellerSku, sitelessUserProductId,
+         cbtItemId, parentUserProductId, familyId, siteItems, createdAt, updatedAt
+       ) VALUES (
+         @productId, @skuKey, @sourceSku, @sellerSku, @sitelessUserProductId,
+         @cbtItemId, @parentUserProductId, @familyId, @siteItems, @createdAt, @updatedAt
+       )
+       ON CONFLICT(productId, skuKey) DO UPDATE SET
+         sourceSku = excluded.sourceSku,
+         sellerSku = excluded.sellerSku,
+         sitelessUserProductId = excluded.sitelessUserProductId,
+         cbtItemId = excluded.cbtItemId,
+         parentUserProductId = excluded.parentUserProductId,
+         familyId = excluded.familyId,
+         siteItems = excluded.siteItems,
+         updatedAt = excluded.updatedAt`
+    )
+    .run(record);
+}
+
+export function getMLPublishedProductMappingsByProductId(productId: string) {
+  return getDb()
+    .prepare(
+      `SELECT id, productId, skuKey, sourceSku, sellerSku,
+              sitelessUserProductId, cbtItemId, parentUserProductId,
+              familyId, siteItems, createdAt, updatedAt
+       FROM ml_published_product_mappings
+       WHERE productId = ?
+       ORDER BY id ASC`
+    )
+    .all(productId) as MLPublishedProductMapping[];
+}
+
+export function getAllMLPublishedProductMappings() {
+  return getDb()
+    .prepare(
+      `SELECT id, productId, skuKey, sourceSku, sellerSku,
+              sitelessUserProductId, cbtItemId, parentUserProductId,
+              familyId, siteItems, createdAt, updatedAt
+       FROM ml_published_product_mappings
+       ORDER BY updatedAt DESC, id DESC`
+    )
+    .all() as MLPublishedProductMapping[];
+}
+
+export function getMLPublishedProductMappingBySellerSku(sellerSku: string) {
+  return getDb()
+    .prepare(
+      `SELECT id, productId, skuKey, sourceSku, sellerSku,
+              sitelessUserProductId, cbtItemId, parentUserProductId,
+              familyId, siteItems, createdAt, updatedAt
+       FROM ml_published_product_mappings
+       WHERE sellerSku = ?`
+    )
+    .get(sellerSku) as MLPublishedProductMapping | undefined;
+}
+
+export function getMLPublishedProductMappingBySitelessId(sitelessUserProductId: string) {
+  return getDb()
+    .prepare(
+      `SELECT id, productId, skuKey, sourceSku, sellerSku,
+              sitelessUserProductId, cbtItemId, parentUserProductId,
+              familyId, siteItems, createdAt, updatedAt
+       FROM ml_published_product_mappings
+       WHERE sitelessUserProductId = ?`
+    )
+    .get(sitelessUserProductId) as MLPublishedProductMapping | undefined;
+}
+
+export function deleteMLPublishedProductMappingsByProductId(productId: string) {
+  getDb()
+    .prepare("DELETE FROM ml_published_product_mappings WHERE productId = ?")
+    .run(productId);
 }
 
 export function deleteMLUserProductsByProductId(productId: string) {

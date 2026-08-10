@@ -56,6 +56,19 @@ export async function GET(_request: Request, context: RouteContext) {
     const bundleRoot = path.dirname(bundle.mainJsonPath);
 
     const perSkuImages = await findSkuImages(bundleRoot);
+    const mainImagesDir = path.join(bundleRoot, "main-images");
+    let mainImagePaths: string[] = [];
+    try {
+      await stat(mainImagesDir);
+      mainImagePaths = (await walkFiles(mainImagesDir)).filter((filePath) => /\.(jpg|jpeg|png|webp|gif)$/i.test(filePath));
+    } catch {
+      // no main-images directory
+    }
+
+    const localImagePaths = Array.from(new Set([
+      ...mainImagePaths,
+      ...bundle.sharedImagePaths,
+    ]));
 
     const skuLocalImages: Record<string, string[]> = {};
     for (const sku of bundle.skuItems) {
@@ -63,7 +76,7 @@ export async function GET(_request: Request, context: RouteContext) {
       const direct = perSkuImages[skuId] || [];
       skuLocalImages[sku.key] = direct.length > 0
         ? direct
-        : bundle.sharedImagePaths.map((p) => buildLocalImageUrl(p));
+        : localImagePaths.map((p) => buildLocalImageUrl(p));
     }
 
     const skuPackageInfo: Record<string, Record<string, string> | null> = {};
@@ -90,7 +103,7 @@ export async function GET(_request: Request, context: RouteContext) {
       })),
       skuProducts: bundle.skuProducts,
       skuPackageInfo,
-      localImages: bundle.sharedImagePaths.map((p) => buildLocalImageUrl(p)),
+      localImages: localImagePaths.map((p) => buildLocalImageUrl(p)),
       skuLocalImages,
     });
   } catch (err) {

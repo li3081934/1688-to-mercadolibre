@@ -56,6 +56,8 @@ function normalizeImageUrl(url) {
     .replace(/^\/\//, "https://")
     .replace(/\.jpg_sum\.jpg.*$/i, ".jpg")
     .replace(/\.png_sum\.jpg.*$/i, ".png")
+    .replace(/\.([a-z0-9]+)_(?:b|m|s)\.(?:jpg|jpeg|png|webp).*$/i, ".$1")
+    .replace(/\.([a-z0-9]+)_\.(?:webp|jpg|jpeg|png).*$/i, ".$1")
     .replace(/_sum\.jpg.*$/i, "")
     .replace(/\.([0-9]+)x([0-9]+)\.jpg.*$/i, ".jpg")
     .replace(/_[0-9]+x[0-9]+\.jpg.*$/i, ".jpg")
@@ -131,8 +133,44 @@ function getStructuredPageData() {
 function collectImages() {
   const structuredData = getStructuredPageData();
   const gallery = structuredData?.gallery;
+
+  const highResolutionImages = new Set();
+  for (const item of document.querySelectorAll(".od-gallery-list > li")) {
+    const candidates = [
+      ...Array.from(item.querySelectorAll("img")).flatMap((image) => [
+        image.getAttribute("data-src"),
+        image.getAttribute("data-lazy-src"),
+        image.getAttribute("src")
+      ])
+    ];
+
+    candidates
+      .map((value) => normalizeImageUrl(String(value || "")))
+      .filter((value) => /^https?:\/\//i.test(value) && !/\.svg(?:$|\?)/i.test(value) && !/\/undefined(?:$|[?#])/i.test(value))
+      .forEach((url) => highResolutionImages.add(url));
+  }
+
+  const pictureGalleryImages = new Set();
+  for (const item of document.querySelectorAll(".od-picture-gallery-list > li")) {
+    if (item.classList.contains("video-image-cover")) {
+      continue;
+    }
+
+    const backgroundImage = item.style.backgroundImage || getComputedStyle(item).backgroundImage;
+    const matchedUrl = backgroundImage.match(/url\(\s*["']?([^"')]+)["']?\s*\)/i)?.[1] || "";
+    const imageUrl = normalizeImageUrl(matchedUrl);
+    if (/^https?:\/\//i.test(imageUrl) && !/\.svg(?:$|\?)/i.test(imageUrl) && !/\/undefined(?:$|[?#])/i.test(imageUrl)) {
+      pictureGalleryImages.add(imageUrl);
+    }
+  }
+
+  const collectedImages = new Set([...highResolutionImages, ...pictureGalleryImages]);
+  if (collectedImages.size) {
+    return Array.from(collectedImages);
+  }
+
   if (gallery) {
-    const galleryImages = [...(gallery.mainImage || []), ...(gallery.offerImgList || []), gallery.video?.coverUrl]
+    const galleryImages = [...(gallery.mainImage || []), ...(gallery.offerImgList || [])]
       .filter(Boolean)
       .map((url) => normalizeImageUrl(String(url)));
 

@@ -2,6 +2,20 @@ import type { MLCategory, MLCategoryAttribute, MLCreateItemResponse, MLCreateUPI
 
 const API_BASE = "https://api.mercadolibre.com";
 
+export type MLCurrentPublishedItem = {
+  id: string;
+  site_id?: string;
+  title?: string;
+  status?: string;
+  category_id?: string;
+  available_quantity?: number;
+  price?: number;
+  net_proceeds?: { amount?: number };
+  cbt_item_id?: string;
+  user_product_id?: string;
+  parent_id?: string;
+};
+
 /**
  * 带 access_token 的 fetch 封装
  */
@@ -120,12 +134,18 @@ export async function createUPItem(
     }) as MLCreateUPItemResponse;
     console.log("[createUPItem] ML 接口返回:", JSON.stringify(result, null, 2));
 
-    const siteErrors = result.site_items.filter((s) => s.error);
-    if (siteErrors.length > 0) {
+    const siteItems = Array.isArray(result.site_items) ? result.site_items : [];
+    if (siteItems.length === 0) {
+      throw new Error("UP 刊登失败：接口未返回有效的站点商品结果。");
+    }
+
+    const successfulSiteItems = siteItems.filter((site) => site.item_id && !site.error);
+    const siteErrors = siteItems.filter((site) => !site.item_id || site.error);
+    if (successfulSiteItems.length === 0) {
       const details = siteErrors
-        .map((s) => `[${s.site_id}] ${s.error?.error || s.error?.message}`)
+        .map((s) => `[${s.site_id}] ${s.error?.error || s.error?.message || "接口未返回商品 ID"}`)
         .join("; ");
-      throw new Error(`站点刊登失败: ${details}`);
+      throw new Error(`站点刊登失败: ${details || "接口未返回成功的站点商品"}`);
     }
 
     return result;
@@ -162,4 +182,52 @@ export async function createTestUser(
     method: "POST",
     body: JSON.stringify({ site_id: siteId }),
   }) as Promise<MLTestUserResponse>;
+}
+
+export async function getCurrentPublishedItems(
+  accessToken: string,
+  mlUserId: number,
+  options: { status?: string } = {}
+): Promise<MLCurrentPublishedItem[]> {
+  const user = await mlFetch(`/marketplace/users/${mlUserId}`, accessToken) as {
+    user_id?: number;
+  };
+  const merchantId = user.user_id || mlUserId;
+  const itemIds: string[] = [];
+  let scrollId: string | undefined;
+  let previousScrollId: string | undefined;
+  const limit = 100;
+
+  while (true) {
+    const params = new URLSearchParams({ search_type: "scan", limit: String(limit) });
+    if (scrollId) params.set("scroll_id", scrollId);
+    if (options.status && options.status !== "all") params.set("status", options.status);
+    const searchResult = await mlFetch(
+      `/marketplace/users/${merchantId}/items/search?${params.toString()}`,
+      accessToken
+    ) as { results?: string[]; scroll_id?: string | null };
+    const results = Array.isArray(searchResult.results) ? searchResult.results : [];
+    itemIds.push(...results);
+    previousScrollId = scrollId;
+    scrollId = searchResult.scroll_id || undefined;
+    if (results.length === 0 || !scrollId || scrollId === previousScrollId) {
+      break;
+    }
+  }
+
+  const items: MLCurrentPublishedItem[] = [];
+  for (let index = 0; index < itemIds.length; index += 20) {
+    const ids = itemIds.slice(index, index + 20).join(",");
+    const response = await mlFetch(
+      `/items?ids=${encodeURIComponent(ids)}&attributes=id,site_id,title,status,category_id,available_quantity,price,net_proceeds,cbt_item_id,user_product_id,parent_id`,
+      accessToken
+    ) as Array<{ code: number; body?: MLCurrentPublishedItem }>;
+    for (const item of response) {
+      if (item.code === 200 && item.body) {
+        items.push(item.body);
+      }
+    }
+  }
+
+  return items;
 }
