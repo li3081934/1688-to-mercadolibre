@@ -100,10 +100,89 @@ body {
   transform: translateY(-1px);
 }
 
-.collect-button:disabled {
+.collect-button:disabled,
+.upload-button:disabled {
   cursor: wait;
   opacity: 0.72;
   transform: none;
+}
+
+.button-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.upload-button {
+  width: 100%;
+  border: 0;
+  border-radius: 16px;
+  padding: 14px 16px;
+  background: linear-gradient(135deg, #2b8a3e 0%, #1e6b2e 100%);
+  color: #fff;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 120ms ease, box-shadow 120ms ease, opacity 120ms ease;
+  box-shadow: 0 14px 28px rgba(30, 107, 46, 0.26);
+}
+
+.upload-button:hover {
+  transform: translateY(-1px);
+}
+
+.server-config {
+  margin-top: 14px;
+  padding: 12px 16px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  border-radius: 18px;
+}
+
+.server-config label {
+  display: block;
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+.server-input-row {
+  display: flex;
+  gap: 8px;
+}
+
+.server-url-input {
+  flex: 1;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px 12px;
+  font-size: 13px;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.6);
+  outline: none;
+  transition: border-color 120ms ease;
+}
+
+.server-url-input:focus {
+  border-color: var(--accent);
+}
+
+.save-url-button {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px 14px;
+  background: var(--panel);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 120ms ease;
+  white-space: nowrap;
+}
+
+.save-url-button:hover {
+  background: rgba(93, 57, 24, 0.08);
 }
 
 .result-row {

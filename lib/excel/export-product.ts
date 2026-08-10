@@ -6,15 +6,17 @@ import ExcelJS from "exceljs";
 import { updateProduct } from "@/lib/db";
 import { findNextWritableRow, getWorksheetOrThrow } from "@/lib/excel/template-fields";
 import { parseProductBundle } from "@/lib/products";
+import { getBaseUrl } from "@/lib/url";
 import type { ExportJsonRecord, ParsedSkuItem, ProductListItem } from "@/lib/types";
 
 type ExportedWorkbook = {
   fileName: string;
   buffer: Buffer;
-  templatePath: string;
 };
 
 type ExportWorkbookOptions = {
+  templatePath: string;
+  sheetName: string;
   selectedSkuKeys?: string[];
   userPrompt?: string;
 };
@@ -84,7 +86,7 @@ const SYSTEM_PROMPT = [
 ].join("\n");
 
 function buildDownloadFileName(product: ProductListItem) {
-  const base = `${product.categoryCode}-${product.offerId || product.id}-${product.title || "product"}`
+  const base = `${product.offerId || product.id}-${product.title || "product"}`
     .replace(/[<>:"/\\|?*\x00-\x1F]/g, " ")
     .replace(/\s+/g, " ")
     .trim()
@@ -99,10 +101,13 @@ function getOpenRouterClient() {
     throw new Error("未配置 OpenRouter API Key。请在 .env 中设置 OPENROUTER_API_KEY 或 API_KEY。");
   }
 
+  const appUrl = getBaseUrl();
+
   return new OpenRouter({
     apiKey,
-    httpReferer: "http://localhost:3000",
-    appTitle: "1688 to Mercado Libre"
+    httpReferer: appUrl,
+    appTitle: "1688 to Mercado Libre",
+    timeoutMs: 120_000
   });
 }
 
@@ -334,12 +339,6 @@ async function requestAiExportPlan(input: {
 }) {
   const client = getOpenRouterClient();
   const payload = {
-    category: {
-      code: input.product.categoryCode,
-      name: input.product.categoryName,
-      templatePath: path.basename(input.product.categoryTemplatePath),
-      sheetName: input.product.categorySheetName
-    },
     worksheet: input.worksheetContext,
     productJson: {
       mainProduct: sanitizeForAi(input.mainProduct),
@@ -454,13 +453,13 @@ function applyAiPlan(worksheet: ExcelJS.Worksheet, firstWritableRow: number, pla
 
 export async function exportProductWorkbook(
   product: ProductListItem,
-  options: ExportWorkbookOptions = {}
+  options: ExportWorkbookOptions
 ): Promise<ExportedWorkbook> {
   const bundle = await parseProductBundle(product.extractedDir);
   const workbook = new ExcelJS.Workbook();
-  await workbook.xlsx.readFile(product.categoryTemplatePath);
+  await workbook.xlsx.readFile(options.templatePath);
 
-  const worksheet = getWorksheetOrThrow(workbook, product.categorySheetName);
+  const worksheet = getWorksheetOrThrow(workbook, options.sheetName);
   const selectedSkuSet = options.selectedSkuKeys?.length ? new Set(options.selectedSkuKeys) : null;
   const selectedSkuItems = selectedSkuSet
     ? bundle.skuItems.filter((item) => selectedSkuSet.has(item.key))
@@ -493,8 +492,7 @@ export async function exportProductWorkbook(
 
     return {
       fileName: buildDownloadFileName(product),
-      buffer: Buffer.from(buffer),
-      templatePath: path.basename(product.categoryTemplatePath)
+      buffer: Buffer.from(buffer)
     };
   } catch (error) {
     updateProduct(product.id, {

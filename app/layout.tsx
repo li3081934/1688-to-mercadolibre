@@ -1,41 +1,39 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import type { ReactNode } from "react";
+import { cookies } from "next/headers";
+import { Toaster } from "sonner";
 
 import "@/app/globals.css";
+import { Sidebar } from "@/components/sidebar";
 
 export const metadata: Metadata = {
   title: "1688 Export Manager",
-  description: "Manage product categories, uploaded ZIP packages, and Excel exports."
+  description:
+    "Manage product categories, uploaded ZIP packages, and Excel exports.",
 };
 
-export default function RootLayout({ children }: { children: ReactNode }) {
+export default async function RootLayout({
+  children,
+}: {
+  children: ReactNode;
+}) {
+  const cookieStore = await cookies();
+  const isAuth = cookieStore.has("auth_token");
+
   return (
     <html lang="zh-CN">
-      <body>
-        <div className="shell">
-          <header className="topbar">
-            <div className="brand">
-              <small className="brand-mark">1688 To Mercado Libre</small>
-              <strong className="brand-title">商品导出管理系统</strong>
+      <body className="overflow-hidden">
+        <Toaster richColors closeButton position="top-right" />
+        {isAuth ? (
+          <div className="flex h-screen">
+            <Sidebar />
+            <div className="flex flex-1 flex-col overflow-hidden">
+              <main className="flex-1 overflow-y-auto p-6">{children}</main>
             </div>
-            <nav className="nav">
-              <Link href="/" className="nav-link">
-                概览
-              </Link>
-              <Link href="/categories" className="nav-link">
-                商品分类管理
-              </Link>
-              <Link href="/products" className="nav-link">
-                商品管理
-              </Link>
-              <Link href="/mercadolibre" className="nav-link">
-                美客多集成
-              </Link>
-            </nav>
-          </header>
-          {children}
-        </div>
+          </div>
+        ) : (
+          children
+        )}
       </body>
     </html>
   );

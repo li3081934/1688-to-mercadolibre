@@ -3,6 +3,15 @@ import { notFound } from "next/navigation";
 import { getProductById } from "@/lib/db";
 import { parseProductBundle } from "@/lib/products";
 import { toRelativeStoragePath } from "@/lib/storage";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import ExportForm from "./export-form";
 
 export const dynamic = "force-dynamic";
@@ -12,7 +21,10 @@ type PageProps = {
   searchParams?: Promise<{ status?: string; message?: string }>;
 };
 
-export default async function ProductDetailPage({ params, searchParams }: PageProps) {
+export default async function ProductDetailPage({
+  params,
+  searchParams,
+}: PageProps) {
   const { id } = await params;
   const product = getProductById(id);
 
@@ -24,102 +36,125 @@ export default async function ProductDetailPage({ params, searchParams }: PagePr
   const paramsState = (await searchParams) || {};
 
   return (
-    <main className="grid">
-      <section className="detail-card stack">
-        <div>
-          <p className="eyebrow">Product Detail</p>
-          <h1>{product.title}</h1>
-          <p className="muted">分类：{product.categoryName} ({product.categoryCode})</p>
-        </div>
-        {paramsState.message ? <div className={`message ${paramsState.status === "error" ? "error" : "success"}`}>{paramsState.message}</div> : null}
-        <div className="actions">
-          <a href="/products" className="button-secondary">返回商品列表</a>
-        </div>
-      </section>
+    <main className="flex flex-col gap-4">
+      <Card>
+        <CardHeader>
+          <CardDescription>Product Detail</CardDescription>
+          <CardTitle>{product.title}</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {paramsState.message ? (
+            <Alert
+              variant={
+                paramsState.status === "error" ? "destructive" : "default"
+              }
+              className="mb-4"
+            >
+              <AlertDescription>{paramsState.message}</AlertDescription>
+            </Alert>
+          ) : null}
+          <a href="/products">
+            <Button variant="outline">返回商品列表</Button>
+          </a>
+        </CardContent>
+      </Card>
 
-      <section className="grid two">
-        <article className="detail-card">
-          <h2>元数据</h2>
-          <div className="kv">
-            <div>
-              <strong>Offer ID</strong>
-              <span>{product.offerId}</span>
-            </div>
-            <div>
-              <strong>SKU 数量</strong>
-              <span>{bundle.skuCount}</span>
-            </div>
-            <div>
-              <strong>上架状态</strong>
-              <span>{product.isListed ? "已上架" : "未上架"}</span>
-            </div>
-            <div>
-              <strong>导出状态</strong>
-              <span>{product.status}</span>
-            </div>
-            <div>
-              <strong>主 JSON</strong>
-              <span>{toRelativeStoragePath(bundle.mainJsonPath)}</span>
-            </div>
-            <div>
-              <strong>详情 JSON</strong>
-              <span>{bundle.detailJsonPath ? toRelativeStoragePath(bundle.detailJsonPath) : "未找到"}</span>
-            </div>
-            <div>
-              <strong>共享图片</strong>
-              <span>{bundle.sharedImagePaths.length}</span>
-            </div>
-            <div>
-              <strong>ZIP 文件</strong>
-              <span>{toRelativeStoragePath(product.zipPath)}</span>
-            </div>
-            <div>
-              <strong>解压目录</strong>
-              <span>{toRelativeStoragePath(product.extractedDir)}</span>
-            </div>
-          </div>
-        </article>
+      <div className="grid-2">
+        <Card>
+          <CardHeader>
+            <CardTitle>元数据</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
+              <dt className="font-medium text-muted-foreground">Offer ID</dt>
+              <dd>{product.offerId}</dd>
+              <dt className="font-medium text-muted-foreground">SKU 数量</dt>
+              <dd>{bundle.skuCount}</dd>
+              <dt className="font-medium text-muted-foreground">上架状态</dt>
+              <dd>{product.isListed ? "已上架" : "未上架"}</dd>
+              <dt className="font-medium text-muted-foreground">导出状态</dt>
+              <dd>{product.status}</dd>
+              <dt className="font-medium text-muted-foreground">主 JSON</dt>
+              <dd className="break-all">
+                {toRelativeStoragePath(bundle.mainJsonPath)}
+              </dd>
+              <dt className="font-medium text-muted-foreground">详情 JSON</dt>
+              <dd className="break-all">
+                {bundle.detailJsonPath
+                  ? toRelativeStoragePath(bundle.detailJsonPath)
+                  : "未找到"}
+              </dd>
+              <dt className="font-medium text-muted-foreground">共享图片</dt>
+              <dd>{bundle.sharedImagePaths.length}</dd>
+              <dt className="font-medium text-muted-foreground">ZIP 文件</dt>
+              <dd className="break-all">
+                {toRelativeStoragePath(product.zipPath)}
+              </dd>
+              <dt className="font-medium text-muted-foreground">解压目录</dt>
+              <dd className="break-all">
+                {toRelativeStoragePath(product.extractedDir)}
+              </dd>
+            </dl>
+          </CardContent>
+        </Card>
 
-        <article className="detail-card stack">
-          <h2>导出上下文</h2>
-          <div className="meta-list">
-            <div className="meta-row">
-              <span className="meta-label">模板路径</span>
-              <span>{toRelativeStoragePath(product.categoryTemplatePath)}</span>
-            </div>
-            <div className="meta-row">
-              <span className="meta-label">工作表</span>
-              <span>{product.categorySheetName}</span>
-            </div>
-            <div className="meta-row">
-              <span className="meta-label">填写方式</span>
-              <span>AI 大模型填写模板</span>
-            </div>
-          </div>
-        </article>
-      </section>
+        <Card>
+          <CardHeader>
+            <CardTitle>导出说明</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
+              <dt className="font-medium text-muted-foreground">填写方式</dt>
+              <dd>AI 大模型填写模板</dd>
+              <dt className="font-medium text-muted-foreground">操作步骤</dt>
+              <dd>
+                上传需要导出的 Excel 模板文件，AI 会自动将商品数据填入对应单元格。
+              </dd>
+            </dl>
+          </CardContent>
+        </Card>
+      </div>
 
-      <section className="detail-card stack">
-        <div>
-          <h2>Excel 填写</h2>
-          <p className="muted">系统会把分类模板、工作表结构、主商品 JSON、已选 SKU JSON 和你的补充提示词一起发送给 AI，让模型生成写入 Excel 的单元格计划。</p>
-        </div>
-        <ExportForm
-          action={`/products/${product.id}/export`}
-          skuItems={bundle.skuItems.map((s) => ({ key: s.key, label: s.label, imageUrl: s.imageUrl }))}
-          hasSku={bundle.skuItems.length > 0}
-        />
-      </section>
+      <Card>
+        <CardHeader>
+          <CardTitle>Excel 填写</CardTitle>
+          <CardDescription>
+            上传 Excel 模板，系统会将商品 JSON 数据和你的补充提示词一起发送给
+            AI，让模型生成写入 Excel 的单元格计划。
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <ExportForm
+            action={`/products/${product.id}/export`}
+            skuItems={bundle.skuItems.map((s) => ({
+              key: s.key,
+              label: s.label,
+              imageUrl: s.imageUrl,
+            }))}
+            hasSku={bundle.skuItems.length > 0}
+          />
+        </CardContent>
+      </Card>
 
-      <section className="detail-card stack">
-        <h2>主 JSON 预览</h2>
-        <pre className="code-block">{JSON.stringify({
-          source: bundle.mainProduct.source || {},
-          product: bundle.mainProduct.product || {},
-          attributes: bundle.mainProduct.attributes || [],
-          packageInfo: bundle.mainProduct.packageInfo || {}
-        }, null, 2)}</pre>
-      </section>
+      <Card>
+        <CardHeader>
+          <CardTitle>主 JSON 预览</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <pre className="max-h-96 overflow-auto rounded-lg border bg-muted p-4 text-xs">
+            {JSON.stringify(
+              {
+                source: bundle.mainProduct.source || {},
+                product: bundle.mainProduct.product || {},
+                attributes: bundle.mainProduct.attributes || [],
+                packageInfo: bundle.mainProduct.packageInfo || {},
+              },
+              null,
+              2,
+            )}
+          </pre>
+        </CardContent>
+      </Card>
     </main>
   );
 }

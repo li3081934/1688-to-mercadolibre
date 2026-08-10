@@ -6,13 +6,15 @@
   "permissions": [
     "activeTab",
     "downloads",
-    "tabs"
+    "tabs",
+    "storage"
   ],
   "host_permissions": [
     "*://detail.1688.com/offer/*",
     "*://*.alicdn.com/*",
     "*://itemcdn.tmall.com/*",
-    "*://cloud.video.taobao.com/*"
+    "*://cloud.video.taobao.com/*",
+    "<all_urls>"
   ],
   "background": {
     "service_worker": "background.js"

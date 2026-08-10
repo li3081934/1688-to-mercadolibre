@@ -1,6 +1,5 @@
-import { NextResponse } from "next/server";
-
 import { getProductById, updateProduct } from "@/lib/db";
+import { redirectWithMessage } from "@/lib/url";
 
 export const runtime = "nodejs";
 
@@ -26,9 +25,3 @@ export async function POST(request: Request, context: RouteContext) {
   return redirectWithMessage(request, "/products", "success", "商品状态已更新。");
 }
 
-function redirectWithMessage(request: Request, routePath: string, status: string, message: string) {
-  const url = new URL(routePath, request.url);
-  url.searchParams.set("status", status);
-  url.searchParams.set("message", message);
-  return NextResponse.redirect(url, { status: 303 });
-}

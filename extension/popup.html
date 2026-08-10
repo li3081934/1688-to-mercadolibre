@@ -19,7 +19,18 @@
         <p id="statusText" class="status-text">等待采集</p>
       </section>
 
-      <button id="collectButton" class="collect-button" type="button">采集并下载商品包</button>
+      <div class="button-group">
+        <button id="collectButton" class="collect-button" type="button">采集并下载商品包</button>
+        <button id="uploadButton" class="upload-button" type="button">采集并上传到系统建档</button>
+      </div>
+
+      <section class="server-config">
+        <label for="serverUrl">系统服务地址</label>
+        <div class="server-input-row">
+          <input id="serverUrl" class="server-url-input" type="url" placeholder="http://localhost:3000" />
+          <button id="saveUrlButton" class="save-url-button" type="button">保存</button>
+        </div>
+      </section>
 
       <section class="result-card">
         <div class="result-row">

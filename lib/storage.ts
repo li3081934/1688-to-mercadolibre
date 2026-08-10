@@ -7,10 +7,6 @@ export function getDatabasePath() {
   return path.join(STORAGE_ROOT, "app.db");
 }
 
-export function getCategoryDir(categoryId: string) {
-  return path.join(STORAGE_ROOT, "categories", categoryId);
-}
-
 export function getProductDir(productId: string) {
   return path.join(STORAGE_ROOT, "products", productId);
 }
