@@ -100,6 +100,19 @@ function openDatabase() {
       updatedAt TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS translation_cache (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      sourceLocale TEXT NOT NULL,
+      targetLocale TEXT NOT NULL,
+      sourceText TEXT NOT NULL,
+      translatedText TEXT NOT NULL,
+      context TEXT NOT NULL DEFAULT '',
+      version TEXT NOT NULL DEFAULT 'v1',
+      createdAt TEXT NOT NULL,
+      updatedAt TEXT NOT NULL,
+      UNIQUE(sourceLocale, targetLocale, sourceText, context, version)
+    );
+
   `);
 
   try {
@@ -193,6 +206,134 @@ function openDatabase() {
 
 function getDb() {
   return openDatabase();
+}
+
+export type TranslationCacheRecord = {
+  sourceLocale: string;
+  targetLocale: string;
+  sourceText: string;
+  translatedText: string;
+  context: string;
+  version: string;
+};
+
+export type TranslationCacheListItem = TranslationCacheRecord & {
+  id: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type TranslationCacheFilters = {
+  page?: number;
+  pageSize?: number;
+  keyword?: string;
+  sourceLocale?: string;
+  targetLocale?: string;
+  context?: string;
+  version?: string;
+};
+
+export function getTranslationCache(
+  sourceLocale: string,
+  targetLocale: string,
+  sourceText: string,
+  context: string,
+  version: string,
+) {
+  return getDb()
+    .prepare(
+      `SELECT sourceLocale, targetLocale, sourceText, translatedText, context, version
+       FROM translation_cache
+       WHERE sourceLocale = ? AND targetLocale = ? AND sourceText = ? AND context = ? AND version = ?`
+    )
+    .get(sourceLocale, targetLocale, sourceText, context, version) as TranslationCacheRecord | undefined;
+}
+
+export function saveTranslationCache(record: TranslationCacheRecord) {
+  const now = new Date().toISOString();
+  getDb()
+    .prepare(
+      `INSERT INTO translation_cache (
+         sourceLocale, targetLocale, sourceText, translatedText, context, version, createdAt, updatedAt
+       ) VALUES (
+         @sourceLocale, @targetLocale, @sourceText, @translatedText, @context, @version, @createdAt, @updatedAt
+       )
+       ON CONFLICT(sourceLocale, targetLocale, sourceText, context, version) DO UPDATE SET
+         translatedText = excluded.translatedText,
+         updatedAt = excluded.updatedAt`
+    )
+    .run({ ...record, createdAt: now, updatedAt: now });
+}
+
+export function listTranslationCache(filters: TranslationCacheFilters = {}) {
+  const page = Math.max(Math.floor(filters.page || 1), 1);
+  const pageSize = Math.min(Math.max(Math.floor(filters.pageSize || 20), 1), 100);
+  const conditions: string[] = [];
+  const values: Array<string | number> = [];
+
+  if (filters.keyword) {
+    conditions.push("(sourceText LIKE ? OR translatedText LIKE ?)");
+    const keyword = `%${filters.keyword}%`;
+    values.push(keyword, keyword);
+  }
+  if (filters.sourceLocale) {
+    conditions.push("sourceLocale = ?");
+    values.push(filters.sourceLocale);
+  }
+  if (filters.targetLocale) {
+    conditions.push("targetLocale = ?");
+    values.push(filters.targetLocale);
+  }
+  if (filters.context) {
+    conditions.push("context = ?");
+    values.push(filters.context);
+  }
+  if (filters.version) {
+    conditions.push("version = ?");
+    values.push(filters.version);
+  }
+
+  const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
+  const database = getDb();
+  const totalRow = database
+    .prepare(`SELECT COUNT(*) as total FROM translation_cache ${where}`)
+    .get(...values) as { total: number };
+  const total = totalRow.total;
+  const totalPages = Math.max(Math.ceil(total / pageSize), 1);
+  const currentPage = Math.min(page, totalPages);
+  const offset = (currentPage - 1) * pageSize;
+  const data = database
+    .prepare(
+      `SELECT id, sourceLocale, targetLocale, sourceText, translatedText,
+              context, version, createdAt, updatedAt
+       FROM translation_cache
+       ${where}
+       ORDER BY updatedAt DESC, id DESC
+       LIMIT ? OFFSET ?`,
+    )
+    .all(...values, pageSize, offset) as TranslationCacheListItem[];
+
+  return { data, total, page: currentPage, pageSize, totalPages };
+}
+
+export function updateTranslationCacheText(id: number, translatedText: string) {
+  const updatedAt = new Date().toISOString();
+  const result = getDb()
+    .prepare(
+      `UPDATE translation_cache
+       SET translatedText = ?, updatedAt = ?
+       WHERE id = ?`,
+    )
+    .run(translatedText, updatedAt, id);
+  if (result.changes === 0) return undefined;
+  return getDb()
+    .prepare(
+      `SELECT id, sourceLocale, targetLocale, sourceText, translatedText,
+              context, version, createdAt, updatedAt
+       FROM translation_cache
+       WHERE id = ?`,
+    )
+    .get(id) as TranslationCacheListItem;
 }
 
 export function listProducts() {

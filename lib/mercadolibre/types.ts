@@ -213,4 +213,5 @@ export type MLCategoryAttribute = {
     name: string;
   }> | null;
   hint?: string;
+  default_unit?: string;
 };

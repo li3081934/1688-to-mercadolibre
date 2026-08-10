@@ -65,10 +65,14 @@ type SiteSkuConfig = {
 type CategoryAttr = {
   id: string;
   name: string;
+  display_name?: string;
   value_type: string;
   tags?: Record<string, unknown>;
   values?: Array<{ id: string; name: string }> | null;
+  display_values?: Array<{ id: string; name: string; display_name?: string }>;
   hint?: string;
+  display_hint?: string;
+  default_unit?: string;
 };
 
 type ProductData = {
@@ -121,9 +125,17 @@ type PredictedCategory = {
   domain_name: string;
   category_id: string;
   category_name: string;
+  display_category_name?: string;
+  display_domain_name?: string;
   path_from_root?: Array<{ id: string; name: string }>;
+  display_path_from_root?: Array<{ id: string; name: string; display_name?: string }>;
   attributes?: Array<{ id: string; value_id?: string; value_name: string }>;
 };
+
+function bilingualText(displayText: string | undefined, sourceText: string) {
+  if (!displayText || displayText === sourceText) return sourceText;
+  return `${displayText}（${sourceText}）`;
+}
 
 type PublishResult = {
   total: number;
@@ -333,23 +345,29 @@ export default function PublishPage() {
       const data = await res.json();
       if (data.success) {
         const attrs = data.data as CategoryAttr[];
-        setCategoryAttrs(attrs);
-
-        const requiredIds = new Set(
-          attrs
-            .filter(
-              (a) =>
-                a.tags?.catalog_required || a.tags?.required,
-            )
-            .map((a) => a.id),
-        );
+        const orderedAttrs = attrs
+          .map((attr, index) => ({
+            attr,
+            index,
+            required: Boolean(
+              attr.tags?.catalog_required || attr.tags?.required,
+            ),
+          }))
+          .sort((a, b) => {
+            if (a.required !== b.required) {
+              return a.required ? -1 : 1;
+            }
+            return a.index - b.index;
+          })
+          .map(({ attr }) => attr);
+        setCategoryAttrs(orderedAttrs);
 
         setSkuOverrides((prev) => {
           const next = { ...prev };
           for (const key of Object.keys(next)) {
             next[key] = {
               ...next[key],
-              attributes: attrs
+              attributes: orderedAttrs
                 .filter(
                   (a) =>
                     a.id !== "ITEM_CONDITION" &&
@@ -872,7 +890,7 @@ export default function PublishPage() {
                             onClick={() => {
                               setMlCategoryId(cat.category_id);
                               setSelectedCategoryName(
-                                `${cat.category_name} (${cat.domain_name})`,
+                                `${bilingualText(cat.display_category_name, cat.category_name)} / ${bilingualText(cat.display_domain_name, cat.domain_name)}`,
                               );
                               setCatResults([]);
                               setCatSearch("");
@@ -881,20 +899,20 @@ export default function PublishPage() {
                           >
                             <span>
                               <span className="font-medium">
-                                {cat.category_name}
+                                {bilingualText(cat.display_category_name, cat.category_name)}
                               </span>
                               <span className="ml-1 text-xs text-muted-foreground">
                                 ({cat.category_id})
                               </span>
                             </span>
                             <span className="text-xs text-primary">
-                              {cat.domain_name}
+                              {bilingualText(cat.display_domain_name, cat.domain_name)}
                             </span>
-                            {cat.path_from_root && cat.path_from_root.length > 1 ? (
+                            {cat.display_path_from_root && cat.display_path_from_root.length > 1 ? (
                               <span className="text-xs text-muted-foreground">
-                                {cat.path_from_root
+                                {cat.display_path_from_root
                                   .slice(0, -1)
-                                  .map((parent) => parent.name)
+                                  .map((parent) => bilingualText(parent.display_name, parent.name))
                                   .join(" > ")}
                               </span>
                             ) : null}
@@ -1142,7 +1160,7 @@ export default function PublishPage() {
                                 className="flex flex-col gap-2"
                               >
                                 <Label>
-                                  {attr.name}{" "}
+                                  {bilingualText(attr.display_name, attr.name)}{" "}
                                   {isRequired ? (
                                     <span className="text-destructive">
                                       *
@@ -1156,8 +1174,9 @@ export default function PublishPage() {
                                       : undefined
                                   }
                                   placeholder={
-                                    attr.hint ||
-                                    `输入${attr.name}`
+                                    attr.value_type === "number_unit"
+                                      ? `如: 30${attr.default_unit ? ` ${attr.default_unit}` : ""}`
+                                      : undefined
                                   }
                                   value={val}
                                   onChange={(e) => {
@@ -1197,13 +1216,6 @@ export default function PublishPage() {
                                     );
                                   }}
                                 />
-                                <p className="text-xs text-muted-foreground">
-                                  {attr.id}
-                                  {attr.value_type ===
-                                  "number_unit"
-                                    ? " (如: 30 cm)"
-                                    : ""}
-                                </p>
                                 {attr.values?.length ? (
                                   <datalist
                                     id={`attr-list-${attr.id}`}
@@ -1213,6 +1225,10 @@ export default function PublishPage() {
                                         <option
                                           key={v.id}
                                           value={v.name}
+                                          label={bilingualText(
+                                            attr.display_values?.find((displayValue) => displayValue.id === v.id)?.display_name,
+                                            v.name,
+                                          )}
                                         />
                                       ),
                                     )}
@@ -1395,7 +1411,7 @@ export default function PublishPage() {
                                       className="flex flex-col gap-2"
                                     >
                                       <Label>
-                                        {attr.name}{" "}
+                                        {bilingualText(attr.display_name, attr.name)}{" "}
                                         {isRequired ? (
                                           <span className="text-destructive">
                                             *
@@ -1409,8 +1425,9 @@ export default function PublishPage() {
                                             : undefined
                                         }
                                         placeholder={
-                                          attr.hint ||
-                                          `输入${attr.name}`
+                                          attr.value_type === "number_unit"
+                                            ? `如: 30${attr.default_unit ? ` ${attr.default_unit}` : ""}`
+                                            : undefined
                                         }
                                         value={val}
                                         onChange={(
@@ -1459,13 +1476,6 @@ export default function PublishPage() {
                                           );
                                         }}
                                       />
-                                      <p className="text-xs text-muted-foreground">
-                                        {attr.id}
-                                        {attr.value_type ===
-                                        "number_unit"
-                                          ? " (如: 30 cm)"
-                                          : ""}
-                                      </p>
                                       {attr.values
                                         ?.length ? (
                                         <datalist
@@ -1477,9 +1487,11 @@ export default function PublishPage() {
                                                 key={
                                                   v.id
                                                 }
-                                                value={
-                                                  v.name
-                                                }
+                                                value={v.name}
+                                                label={bilingualText(
+                                                  attr.display_values?.find((displayValue) => displayValue.id === v.id)?.display_name,
+                                                  v.name,
+                                                )}
                                               />
                                             ),
                                           )}

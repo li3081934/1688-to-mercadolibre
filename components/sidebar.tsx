@@ -10,6 +10,7 @@ import {
   Globe,
   ExternalLink,
   Brain,
+  Languages,
   LogOut,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -32,6 +33,11 @@ const NAV_ITEMS: Array<{
     icon: <Globe className="h-4 w-4" />,
   },
   { href: "/ai-models", label: "AI 模型", icon: <Brain className="h-4 w-4" /> },
+  {
+    href: "/translation-cache",
+    label: "翻译缓存",
+    icon: <Languages className="h-4 w-4" />,
+  },
 ];
 
 export function Sidebar() {
