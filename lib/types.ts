@@ -98,6 +98,11 @@ export type ProductRecord = {
   lastError: string | null;
   lastExportedAt: string | null;
   mlItemId: string | null;
+  familyName: string | null;
+  userProductId: string | null;
+  familyId: string | null;
+  parentUserProductId: string | null;
+  publishModel: string;
   createdAt: string;
   updatedAt: string;
 };
@@ -125,6 +130,19 @@ export type ParsedSkuItem = {
   imageUrl: string | null;
   jsonPath: string | null;
   product: ExportJsonRecord;
+};
+
+export type MLUserProductRecord = {
+  id: number;
+  productId: string;
+  skuKey: string;
+  sitelessUserProductId: string | null;
+  familyId: string | null;
+  familyName: string | null;
+  cbtItemId: string | null;
+  siteItems: string;
+  createdAt: string;
+  updatedAt: string;
 };
 
 export type ParsedProductBundle = {

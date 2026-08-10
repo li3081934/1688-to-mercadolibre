@@ -46,6 +46,11 @@ export async function POST(request: Request) {
       lastError: null,
       lastExportedAt: null,
       mlItemId: null,
+      familyName: null,
+      userProductId: null,
+      familyId: null,
+      parentUserProductId: null,
+      publishModel: "classic",
       createdAt: now,
       updatedAt: now
     });

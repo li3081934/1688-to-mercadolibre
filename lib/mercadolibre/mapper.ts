@@ -1,63 +1,6 @@
 import type { ExportJsonRecord } from "@/lib/types";
 
 /**
- * 从 HTML 中去除标签，提取纯文本
- */
-function stripHtml(html: string): string {
-  return html
-    .replace(/<[^>]*>/g, "")
-    .replace(/&nbsp;/g, " ")
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-/**
- * 构建商品标题
- * Global Selling 标题限制 60 字符，建议英文
- */
-export function buildItemTitle(
-  mainProduct: ExportJsonRecord,
-  overrideTitle?: string
-): string {
-  if (overrideTitle?.trim()) {
-    return overrideTitle.trim().slice(0, 60);
-  }
-
-  const title =
-    mainProduct.product?.title ||
-    (mainProduct.fields?.title as string | undefined) ||
-    (mainProduct.source?.title as string | undefined) ||
-    "Product";
-
-  return title.trim().slice(0, 60);
-}
-
-/**
- * 构建商品描述（纯文本）
- * Global Selling 描述内联在请求体中，纯文本格式
- */
-export function buildItemDescription(mainProduct: ExportJsonRecord): string {
-  if (mainProduct.detail?.text) {
-    return stripHtml(mainProduct.detail.text);
-  }
-
-  if (mainProduct.detail?.html) {
-    return stripHtml(mainProduct.detail.html);
-  }
-
-  if (mainProduct.product?.description) {
-    return stripHtml(mainProduct.product.description);
-  }
-
-  return mainProduct.product?.title || "No description";
-}
-
-/**
  * 解析商品价格（USD）
  */
 export function buildItemPrice(
@@ -176,20 +119,37 @@ export function buildSitesToSell(
 }
 
 /**
- * 构建 attributes 数组
- * Global Selling 需要以下必填属性：
- * - BRAND, GTIN, ITEM_CONDITION, MODEL
- * - PACKAGE_HEIGHT, PACKAGE_LENGTH, PACKAGE_WIDTH, PACKAGE_WEIGHT
- * - SELLER_SKU
+ * 构建 family_name（UP 模式通用描述，不含具体变体信息）
+ * 例如: "Apple iPhone 256GB" (不包含颜色)
  */
-export function buildAttributes(
+export function buildFamilyName(
+  mainProduct: ExportJsonRecord,
+  fallbackTitle: string
+): string {
+  const title =
+    mainProduct.product?.title ||
+    (mainProduct.fields?.title as string | undefined) ||
+    (mainProduct.source?.title as string | undefined) ||
+    fallbackTitle;
+
+  return title.trim().slice(0, 60);
+}
+
+/**
+ * 构建 UP 模式的 attributes（支持 values 数组格式）
+ * 参考: https://global-selling.mercadolibre.com/devsite/price-per-variation-cbt
+ */
+export function buildUPAttributes(
   mainProduct: ExportJsonRecord,
   offerId: string
-): Array<{ id: string; value_name: string }> {
-  const attributes: Array<{ id: string; value_name: string }> = [];
+): Array<{ id: string } & ({ value_name: string } | { values: Array<{ id?: string; name: string }> })> {
+  const attributes: Array<{ id: string } & ({ value_name: string } | { values: Array<{ id?: string; name: string }> })> = [];
 
-  // ITEM_CONDITION — 新品
-  attributes.push({ id: "ITEM_CONDITION", value_name: "New" });
+  // ITEM_CONDITION — 用 values 数组格式
+  attributes.push({
+    id: "ITEM_CONDITION",
+    values: [{ id: "2230284", name: "New" }],
+  });
 
   // BRAND — 从商品属性中提取
   const brand = findAttribute(mainProduct, "品牌", "brand", "Brand");
@@ -223,7 +183,7 @@ export function buildAttributes(
     if (skuPkg.width) attributes.push({ id: "PACKAGE_WIDTH", value_name: `${skuPkg.width} cm` });
     if (skuPkg.height) attributes.push({ id: "PACKAGE_HEIGHT", value_name: `${skuPkg.height} cm` });
     if (skuPkg.weight) {
-      attributes.push({ id: "PACKAGE_WEIGHT", value_name: `${skuPkg.weight} kg` });
+      attributes.push({ id: "PACKAGE_WEIGHT", value_name: `${skuPkg.weight} g` });
     }
   }
 

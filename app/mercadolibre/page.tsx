@@ -23,15 +23,30 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
+type AccountInfo = {
+  mlUserId: number;
+  nickname: string;
+  siteId: string;
+  isCurrent: boolean;
+  isTestUser: boolean;
+  hasToken: boolean;
+  password?: string;
+};
+
 type AuthStatus = {
   authenticated: boolean;
   authUrl?: string;
+  authUrlLogin?: string;
+  authUrlTest?: string;
   mlUserId?: number;
   siteId?: string;
   nickname?: string;
   tokenExpiresAt?: string;
   tags?: string[];
+  forceUserProduct?: boolean;
   isUserProductSeller?: boolean;
+  isTestUser?: boolean;
+  accounts: AccountInfo[];
 };
 
 type Category = {
@@ -42,6 +57,7 @@ type Category = {
 };
 
 const SITES = [
+  { id: "MLA", name: "Argentina" },
   { id: "MLB", name: "Brazil" },
   { id: "MLM", name: "Mexico" },
   { id: "MLC", name: "Chile" },
@@ -61,12 +77,24 @@ export default function MercadoLibrePage() {
     text: string;
   } | null>(null);
   const [fetchingTags, setFetchingTags] = useState(false);
+  const [forceUP, setForceUP] = useState(false);
+  const [togglingForceUP, setTogglingForceUP] = useState(false);
   const [tagsResult, setTagsResult] = useState<{
     parentTags: string[];
     allTags: string[];
     isUserProductSeller: boolean;
     userType?: string;
   } | null>(null);
+  const [creatingTestUser, setCreatingTestUser] = useState(false);
+  const [testSiteId, setTestSiteId] = useState("MLA");
+  const [createdTestUser, setCreatedTestUser] = useState<{
+    mlUserId: number;
+    nickname: string;
+    password: string;
+    siteId: string;
+  } | null>(null);
+  const [switchingAccount, setSwitchingAccount] = useState<number | null>(null);
+  const [unbindingAccount, setUnbindingAccount] = useState<number | null>(null);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -84,8 +112,9 @@ export default function MercadoLibrePage() {
       const res = await fetch("/api/mercadolibre/auth");
       const data = await res.json();
       setAuth(data);
+      setForceUP(data.forceUserProduct ?? false);
     } catch {
-      setAuth({ authenticated: false });
+      setAuth({ authenticated: false, accounts: [] } as AuthStatus);
     } finally {
       setLoading(false);
     }
@@ -153,6 +182,77 @@ export default function MercadoLibrePage() {
     }
   };
 
+  const handleSwitchAccount = async (mlUserId: number) => {
+    setSwitchingAccount(mlUserId);
+    try {
+      const res = await fetch("/api/mercadolibre/switch-account", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mlUserId }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        toast.success("已切换账号");
+        setCreatedTestUser(null);
+        checkAuth();
+      } else {
+        toast.error(data.message || "切换失败");
+      }
+    } catch {
+      toast.error("切换账号失败");
+    } finally {
+      setSwitchingAccount(null);
+    }
+  };
+
+  const handleUnbindAccount = async (mlUserId: number) => {
+    if (!window.confirm("确定要解绑该账号吗？解绑后可重新绑定新账号。")) return;
+    setUnbindingAccount(mlUserId);
+    try {
+      const res = await fetch("/api/mercadolibre/accounts", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mlUserId }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        toast.success("账号已解绑");
+        setCreatedTestUser(null);
+        checkAuth();
+      } else {
+        toast.error(data.message || "解绑失败");
+      }
+    } catch {
+      toast.error("解绑账号失败");
+    } finally {
+      setUnbindingAccount(null);
+    }
+  };
+
+  const handleCreateTestUser = async () => {
+    setCreatingTestUser(true);
+    setCreatedTestUser(null);
+    try {
+      const res = await fetch("/api/mercadolibre/create-test-user", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ siteId: testSiteId }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setCreatedTestUser(data.data);
+        toast.success("测试账号创建成功");
+        checkAuth();
+      } else {
+        toast.error(data.message || "创建失败");
+      }
+    } catch {
+      toast.error("创建测试账号失败");
+    } finally {
+      setCreatingTestUser(false);
+    }
+  };
+
   return (
     <main className="flex flex-col gap-4">
       <div className="grid-2">
@@ -185,13 +285,20 @@ export default function MercadoLibrePage() {
           <CardContent>
             {loading ? (
               <p className="text-sm text-muted-foreground">检查中...</p>
-            ) : auth?.authenticated ? (
+            ) : auth?.mlUserId ? (
               <div className="flex flex-col gap-4">
                 <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
                   <dt className="font-medium text-muted-foreground">
                     用户 ID
                   </dt>
-                  <dd>{auth.mlUserId}</dd>
+                  <dd>
+                    {auth.mlUserId}
+                    {auth.isTestUser ? (
+                      <span className="ml-2 inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800">
+                        测试号
+                      </span>
+                    ) : null}
+                  </dd>
                   <dt className="font-medium text-muted-foreground">
                     昵称
                   </dt>
@@ -200,90 +307,276 @@ export default function MercadoLibrePage() {
                     站点
                   </dt>
                   <dd>{auth.siteId}</dd>
-                  <dt className="font-medium text-muted-foreground">
-                    Token 过期
-                  </dt>
-                  <dd>
-                    {auth.tokenExpiresAt
-                      ? new Date(auth.tokenExpiresAt).toLocaleString(
-                          "zh-CN",
-                        )
-                      : "-"}
-                  </dd>
+                  {auth.authenticated ? (
+                    <>
+                      <dt className="font-medium text-muted-foreground">
+                        Token 过期
+                      </dt>
+                      <dd>
+                        {auth.tokenExpiresAt
+                          ? new Date(auth.tokenExpiresAt).toLocaleString(
+                              "zh-CN",
+                            )
+                          : "-"}
+                      </dd>
+                    </>
+                  ) : (
+                    <>
+                      <dt className="font-medium text-muted-foreground">
+                        状态
+                      </dt>
+                      <dd>
+                        <span className="inline-flex items-center rounded-full bg-orange-100 px-2 py-0.5 text-xs font-medium text-orange-800">
+                          未授权
+                        </span>
+                      </dd>
+                    </>
+                  )}
                 </dl>
-                <div>
-                  <a href={auth.authUrl}>
-                    <Button variant="outline">重新授权</Button>
-                  </a>
-                  <Button
-                    onClick={handleFetchTags}
-                    disabled={fetchingTags}
-                    variant="secondary"
-                    className="ml-2"
-                  >
-                    {fetchingTags ? "获取中..." : "检查用户标签"}
-                  </Button>
-                </div>
 
-                {tagsResult ? (
-                  <div className="rounded-lg border p-3 space-y-3">
+                {auth.authenticated ? (
+                  <>
                     <div>
-                      <h4 className="text-sm font-medium mb-2">
-                        用户标签
-                        {tagsResult.isUserProductSeller ? (
-                          <span className="ml-2 inline-flex items-center rounded-full bg-yellow-100 px-2 py-0.5 text-xs font-medium text-yellow-800">
-                            user_product_seller
-                          </span>
-                        ) : null}
-                      </h4>
+                      <a href={auth.authUrl}>
+                        <Button variant="outline">重新授权</Button>
+                      </a>
+                      <Button
+                        onClick={handleFetchTags}
+                        disabled={fetchingTags}
+                        variant="secondary"
+                        className="ml-2"
+                      >
+                        {fetchingTags ? "获取中..." : "检查用户标签"}
+                      </Button>
+                      <span className="ml-2 inline-flex items-center gap-2 text-sm">
+                        <span className="text-muted-foreground">强制 UP 模式</span>
+                        <button
+                          onClick={async () => {
+                            setTogglingForceUP(true);
+                            try {
+                              const res = await fetch("/api/mercadolibre/toggle-force-up", {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({ force: !forceUP }),
+                              });
+                              const data = await res.json();
+                              if (data.success) {
+                                setForceUP(data.forceUserProduct);
+                              }
+                            } catch {
+                              // ignore
+                            } finally {
+                              setTogglingForceUP(false);
+                            }
+                          }}
+                          disabled={togglingForceUP}
+                          className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+                            forceUP ? "bg-yellow-500" : "bg-gray-300"
+                          }`}
+                        >
+                          <span
+                            className={`inline-block size-3.5 rounded-full bg-white transition-transform ${
+                              forceUP ? "translate-x-4" : "translate-x-1"
+                            }`}
+                          />
+                        </button>
+                        <span className="ml-1 text-xs text-muted-foreground">
+                          {forceUP ? "开" : "关"}
+                        </span>
+                      </span>
+                    </div>
 
-                      <p className="text-xs text-muted-foreground mb-1">
-                        CBT 父账号标签:
-                      </p>
-                      {tagsResult.parentTags.length > 0 ? (
-                        <div className="flex flex-wrap gap-1">
-                          {tagsResult.parentTags.map((tag) => (
-                            <span
-                              key={tag}
-                              className="inline-flex items-center rounded-full bg-secondary px-2 py-0.5 text-xs font-medium text-secondary-foreground"
-                            >
-                              {tag}
-                            </span>
-                          ))}
-                        </div>
-                      ) : (
-                        <p className="text-xs text-muted-foreground">无</p>
-                      )}
-
-                      <p className="text-xs text-muted-foreground mt-2 mb-1">
-                        含子站点合并标签:
-                      </p>
-                      {tagsResult.allTags.length > 0 ? (
-                        <div className="flex flex-wrap gap-1">
-                          {tagsResult.allTags.map((tag) => {
-                            const isChildOnly = !tagsResult.parentTags.includes(tag);
-                            return (
-                              <span
-                                key={tag}
-                                className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
-                                  isChildOnly
-                                    ? "bg-blue-100 text-blue-800"
-                                    : "bg-secondary text-secondary-foreground"
-                                }`}
-                                title={isChildOnly ? "仅子站点有" : undefined}
-                              >
-                                {tag}
-                                {isChildOnly ? " *" : null}
+                    {tagsResult ? (
+                      <div className="rounded-lg border p-3 space-y-3">
+                        <div>
+                          <h4 className="text-sm font-medium mb-2">
+                            用户标签
+                            {tagsResult.isUserProductSeller ? (
+                              <span className="ml-2 inline-flex items-center rounded-full bg-yellow-100 px-2 py-0.5 text-xs font-medium text-yellow-800">
+                                user_product_seller
                               </span>
-                            );
-                          })}
+                            ) : null}
+                          </h4>
+
+                          <p className="text-xs text-muted-foreground mb-1">
+                            CBT 父账号标签:
+                          </p>
+                          {tagsResult.parentTags.length > 0 ? (
+                            <div className="flex flex-wrap gap-1">
+                              {tagsResult.parentTags.map((tag) => (
+                                <span
+                                  key={tag}
+                                  className="inline-flex items-center rounded-full bg-secondary px-2 py-0.5 text-xs font-medium text-secondary-foreground"
+                                >
+                                  {tag}
+                                </span>
+                              ))}
+                            </div>
+                          ) : (
+                            <p className="text-xs text-muted-foreground">无</p>
+                          )}
+
+                          <p className="text-xs text-muted-foreground mt-2 mb-1">
+                            含子站点合并标签:
+                          </p>
+                          {tagsResult.allTags.length > 0 ? (
+                            <div className="flex flex-wrap gap-1">
+                              {tagsResult.allTags.map((tag) => {
+                                const isChildOnly = !tagsResult.parentTags.includes(tag);
+                                return (
+                                  <span
+                                    key={tag}
+                                    className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
+                                      isChildOnly
+                                        ? "bg-blue-100 text-blue-800"
+                                        : "bg-secondary text-secondary-foreground"
+                                    }`}
+                                    title={isChildOnly ? "仅子站点有" : undefined}
+                                  >
+                                    {tag}
+                                    {isChildOnly ? " *" : null}
+                                  </span>
+                                );
+                              })}
+                            </div>
+                          ) : (
+                            <p className="text-xs text-muted-foreground">无</p>
+                          )}
                         </div>
-                      ) : (
-                        <p className="text-xs text-muted-foreground">无</p>
-                      )}
+                      </div>
+                    ) : null}
+                  </>
+                ) : (
+                  <div className="flex gap-2">
+                    <a href={auth.authUrlTest || auth.authUrlLogin || auth.authUrl}>
+                      <Button>授权此账号</Button>
+                    </a>
+                  </div>
+                )}
+
+                {auth.accounts.length > 0 ? (
+                  <div className="border-t pt-4">
+                    <h4 className="text-sm font-medium mb-2">所有账号</h4>
+                    <div className="flex flex-col gap-2">
+                      {auth.accounts.map((acc) => (
+                        <div
+                          key={acc.mlUserId}
+                          className={`flex items-center justify-between rounded-lg border px-3 py-2 text-sm ${
+                            acc.isCurrent ? "bg-muted" : ""
+                          }`}
+                        >
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="truncate font-medium">
+                              {acc.nickname}
+                            </span>
+                            <span className="text-xs text-muted-foreground shrink-0">
+                              ({acc.siteId})
+                            </span>
+                            {acc.isTestUser ? (
+                              <span className="inline-flex items-center rounded-full bg-green-100 px-1.5 py-0.5 text-xs font-medium text-green-800 shrink-0">
+                                测试
+                              </span>
+                            ) : null}
+                            {!acc.hasToken ? (
+                              <span className="inline-flex items-center rounded-full bg-orange-100 px-1.5 py-0.5 text-xs font-medium text-orange-800 shrink-0">
+                                未授权
+                              </span>
+                            ) : null}
+                            {acc.isCurrent ? (
+                              <span className="inline-flex items-center rounded-full bg-blue-100 px-1.5 py-0.5 text-xs font-medium text-blue-800 shrink-0">
+                                当前
+                              </span>
+                            ) : null}
+                            {acc.password ? (
+                              <code className="text-xs text-muted-foreground shrink-0 font-mono">
+                                密码: {acc.password}
+                              </code>
+                            ) : null}
+                          </div>
+                          <div className="flex gap-1 shrink-0">
+                            {!acc.isCurrent ? (
+                              <>
+                                {!acc.hasToken ? (
+                                  <a href={acc.isTestUser ? (auth.authUrlTest || auth.authUrlLogin || auth.authUrl) : (auth.authUrlLogin || auth.authUrl)}>
+                                    <Button variant="outline" size="sm">
+                                      授权
+                                    </Button>
+                                  </a>
+                                ) : null}
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => handleSwitchAccount(acc.mlUserId)}
+                                  disabled={switchingAccount === acc.mlUserId}
+                                >
+                                  {switchingAccount === acc.mlUserId ? "切换中..." : "切换"}
+                                </Button>
+                              </>
+                            ) : null}
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="text-destructive hover:text-destructive"
+                              onClick={() => handleUnbindAccount(acc.mlUserId)}
+                              disabled={unbindingAccount === acc.mlUserId}
+                            >
+                              {unbindingAccount === acc.mlUserId ? "解绑中..." : "解绑"}
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   </div>
                 ) : null}
+
+                <div className="border-t pt-4">
+                  <h4 className="text-sm font-medium mb-2">创建测试账号</h4>
+                  <div className="flex items-end gap-2">
+                    <div className="flex flex-col gap-1">
+                      <Label htmlFor="test-site">站点</Label>
+                      <Select
+                        value={testSiteId}
+                        onValueChange={(v) => setTestSiteId(v)}
+                      >
+                        <SelectTrigger id="test-site" className="w-36">
+                          <SelectValue placeholder="选择站点" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {SITES.map((s) => (
+                            <SelectItem key={s.id} value={s.id}>
+                              {s.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <Button
+                      onClick={handleCreateTestUser}
+                      disabled={creatingTestUser}
+                    >
+                      {creatingTestUser ? "创建中..." : "创建测试账号"}
+                    </Button>
+                  </div>
+                  {createdTestUser ? (
+                    <Alert className="mt-3">
+                      <AlertDescription>
+                        <div className="text-sm space-y-1">
+                          <p>
+                            <span className="font-medium">昵称:</span>{" "}
+                            {createdTestUser.nickname}
+                          </p>
+                          <p>
+                            <span className="font-medium">密码:</span>{" "}
+                            {createdTestUser.password}
+                          </p>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            请保存好密码，授权时需要使用此密码登录美客多。
+                          </p>
+                        </div>
+                      </AlertDescription>
+                    </Alert>
+                  ) : null}
+                </div>
               </div>
             ) : (
               <div className="flex flex-col gap-3">

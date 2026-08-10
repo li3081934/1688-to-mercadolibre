@@ -1,6 +1,7 @@
 import { getBaseUrl } from "@/lib/url";
 
 const ML_AUTH_URL = "https://global-selling.mercadolibre.com/authorization";
+const ML_AUTH_URL_STANDARD = "https://auth.mercadolibre.com/authorization";
 const ML_TOKEN_URL = "https://api.mercadolibre.com/oauth/token";
 
 function getClientId(): string {
@@ -23,15 +24,19 @@ function getRedirectUri(): string {
 
 /**
  * 生成跳转到美客多授权页面的 URL
+ * @param promptLogin - 强制用户重新登录（用于切换账号/测试账号授权）
+ * @param standardAuth - 使用标准 OAuth URL（而非 Global Selling），测试账号需要此模式
  */
-export function getAuthUrl(): string {
+export function getAuthUrl(promptLogin?: boolean, standardAuth?: boolean): string {
   const params = new URLSearchParams({
     response_type: "code",
     client_id: getClientId(),
     redirect_uri: getRedirectUri(),
     scope: "offline_access read write",
   });
-  return `${ML_AUTH_URL}?${params.toString()}`;
+  if (promptLogin) params.set("prompt", "login");
+  const baseUrl = standardAuth ? ML_AUTH_URL_STANDARD : ML_AUTH_URL;
+  return `${baseUrl}?${params.toString()}`;
 }
 
 /**

@@ -14,7 +14,8 @@ export async function GET(_request: Request, context: RouteParams) {
   try {
     const { token } = await getValidToken();
     const attributes = await getCategoryAttributes(categoryId, token);
-    return NextResponse.json({ success: true, data: attributes });
+    const filtered = attributes.filter((a) => !(a.tags?.read_only));
+    return NextResponse.json({ success: true, data: filtered });
   } catch (err) {
     return NextResponse.json(
       {

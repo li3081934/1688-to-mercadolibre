@@ -65,6 +65,7 @@ type AIModel = {
 
 const PURPOSES = [
   { value: "translation", label: "翻译" },
+  { value: "title_polish", label: "标题润色翻译" },
   { value: "image_editing", label: "P图" },
   { value: "fill_info", label: "填写信息" },
 ];
@@ -130,7 +131,7 @@ export default function AIModelsPage() {
       modelName: model.modelName,
       systemPrompt: model.systemPrompt,
       protocol: model.protocol as "openai" | "anthropic",
-      purpose: model.purpose as "translation" | "image_editing" | "fill_info",
+      purpose: model.purpose as "translation" | "title_polish" | "image_editing" | "fill_info",
       thinkingEnabled: model.thinkingEnabled,
     });
     setEditingId(model.id);
@@ -314,7 +315,7 @@ export default function AIModelsPage() {
                   <Select
                     value={form.purpose}
                     onValueChange={(v) =>
-                      setForm({ ...form, purpose: v as "translation" | "image_editing" | "fill_info" })
+                      setForm({ ...form, purpose: v as "translation" | "title_polish" | "image_editing" | "fill_info" })
                     }
                   >
                     <SelectTrigger id="purpose">
@@ -425,9 +426,11 @@ export default function AIModelsPage() {
                       <Badge variant="outline">
                         {model.purpose === "translation"
                           ? "翻译"
-                          : model.purpose === "image_editing"
-                            ? "P图"
-                            : "填写信息"}
+                          : model.purpose === "title_polish"
+                            ? "标题润色翻译"
+                            : model.purpose === "image_editing"
+                              ? "P图"
+                              : "填写信息"}
                       </Badge>
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground">

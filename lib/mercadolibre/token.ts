@@ -20,6 +20,10 @@ export async function getValidToken(): Promise<ValidTokenResult> {
     throw new Error("未授权。请先登录美客多账号。");
   }
 
+  if (!account.accessToken) {
+    throw new Error("当前账号尚未完成 OAuth 授权，请先授权。");
+  }
+
   if (Date.now() >= new Date(account.tokenExpiresAt).getTime()) {
     const refreshRes = await refreshAccessToken(account.refreshToken);
     const tokenExpiresAt = new Date(

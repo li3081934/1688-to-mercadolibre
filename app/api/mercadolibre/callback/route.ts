@@ -1,5 +1,5 @@
 import { exchangeCode } from "@/lib/mercadolibre/auth";
-import { getMLAccount, saveMLAccount, updateMLAccount, updateMLAccountTags } from "@/lib/db";
+import { getMLAccountByUserId, saveMLAccount, setCurrentMLAccount, updateMLAccount, updateMLAccountTags } from "@/lib/db";
 import { getBaseUrl } from "@/lib/url";
 import type { MLUserResponse } from "@/lib/mercadolibre/types";
 
@@ -57,8 +57,8 @@ export async function GET(request: Request) {
       ? { site_id: oauthRes.site_id, nickname: oauthRes.nickname ?? String(oauthRes.user_id), tags: oauthRes.nickname ? [] as string[] : [] as string[] }
       : await fetchMLUser(oauthRes.access_token);
 
-    const existing = getMLAccount();
-    if (existing) {
+    const existingById = getMLAccountByUserId(oauthRes.user_id);
+    if (existingById) {
       updateMLAccount(oauthRes.user_id, {
         accessToken: oauthRes.access_token,
         refreshToken: oauthRes.refresh_token,
@@ -76,10 +76,15 @@ export async function GET(request: Request) {
         tokenExpiresAt,
         nickname: user.nickname,
         tags: JSON.stringify(user.tags ?? []),
+        forceUserProduct: 0,
+        isCurrent: 0,
+        isTestUser: 0,
+        password: "",
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       });
     }
+    setCurrentMLAccount(oauthRes.user_id);
 
     return redirectTo("/mercadolibre", { status: "success", message: "美客多账号授权成功！" });
   } catch (err) {

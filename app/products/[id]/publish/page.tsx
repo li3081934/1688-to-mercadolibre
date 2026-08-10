@@ -43,12 +43,10 @@ import {
 } from "@/components/ui/select";
 
 type SkuOverride = {
-  title: string;
-  description: string;
   price: string;
   quantity: string;
   pictureIds: string[];
-  attributes: Array<{ id: string; value_name: string }>;
+  attributes: Array<{ id: string; value_name: string; value_id?: string }>;
   warrantyTypeId: string;
   warrantyTime: string;
   listingTypeId: string;
@@ -120,11 +118,14 @@ type PublishResult = {
   total: number;
   succeeded: number;
   failed: number;
+  publishModel?: string;
   results: Array<{
     skuKey: string;
     skuLabel: string;
     success: boolean;
     mlItemId?: string;
+    sitelessUserProductId?: string;
+    familyId?: string;
     error?: string;
   }>;
 };
@@ -168,7 +169,6 @@ export default function PublishPage() {
   const [publishing, setPublishing] = useState(false);
   const [mlCategoryId, setMlCategoryId] = useState("");
   const [selectedCategoryName, setSelectedCategoryName] = useState("");
-  const [siteId, setSiteId] = useState("MLM");
   const [catSearch, setCatSearch] = useState("");
   const [catResults, setCatResults] = useState<PredictedCategory[]>([]);
   const [catSearchLoading, setCatSearchLoading] = useState(false);
@@ -181,10 +181,12 @@ export default function PublishPage() {
     new Set(),
   );
   const [result, setResult] = useState<PublishResult | null>(null);
+  const [familyName, setFamilyName] = useState("");
+  const [description, setDescription] = useState("");
 
   const [showAttributes, setShowAttributes] = useState(false);
-  const [translating, setTranslating] = useState<string | null>(null);
-  const [translatingDesc, setTranslatingDesc] = useState<string | null>(null);
+  const [translatingDesc, setTranslatingDesc] = useState(false);
+  const [translatingFamily, setTranslatingFamily] = useState(false);
   const [uploadingImage, setUploadingImage] = useState<string | null>(null);
   const [collapsedSkus, setCollapsedSkus] = useState<Set<string>>(new Set());
   const [imageViewer, setImageViewer] = useState<{
@@ -215,28 +217,10 @@ export default function PublishPage() {
         const overrides: Record<string, SkuOverride> = {};
         const baseTitle =
           bundleData.mainProduct?.product?.title || prodData.title || "";
-        const rawDesc =
-          bundleData.mainProduct?.detail?.text ||
-          bundleData.mainProduct?.detail?.html ||
-          bundleData.mainProduct?.product?.description ||
-          bundleData.mainProduct?.product?.title ||
-          "";
-        const baseDescription = rawDesc
-          .replace(/<[^>]*>/g, "")
-          .replace(/&nbsp;/g, " ")
-          .replace(/&amp;/g, "&")
-          .replace(/&lt;/g, "<")
-          .replace(/&gt;/g, ">")
-          .replace(/&quot;/g, '"')
-          .replace(/&#39;/g, "'")
-          .replace(/\s+/g, " ")
-          .trim();
         for (const sku of bundleData.skuItems || []) {
           const skuPrice =
             bundleData.skuProducts?.[0]?.sku?.price || "";
           overrides[sku.key] = {
-            title: `${baseTitle} - ${sku.label}`.slice(0, 60),
-            description: baseDescription,
             price: skuPrice
               ? parseFloat(skuPrice.replace(/[^0-9.]/g, "")).toString()
               : "",
@@ -249,8 +233,6 @@ export default function PublishPage() {
           };
         }
         if (overrides.main) {
-          overrides.main.title = baseTitle.slice(0, 60);
-          overrides.main.description = baseDescription;
           overrides.main.quantity = "100";
           overrides.main.attributes = [];
           overrides.main.warrantyTypeId = "6150835";
@@ -258,6 +240,8 @@ export default function PublishPage() {
           overrides.main.listingTypeId = "gold_special";
         }
         setSkuOverrides(overrides);
+        setFamilyName(prev => prev || baseTitle.slice(0, 60));
+        setDescription(prev => prev || bundleData.mainProduct?.product?.description || "");
         setSelectedSkuKeys(new Set(Object.keys(overrides)));
       })
       .catch((e) => toast.error(e.message))
@@ -299,7 +283,7 @@ export default function PublishPage() {
       const translateData = await translateRes.json();
       const translated = translateData.translated || query;
       const res = await fetch(
-        `/api/mercadolibre/categories/search?siteId=${siteId}&query=${encodeURIComponent(translated)}`,
+        `/api/mercadolibre/categories/search?query=${encodeURIComponent(translated)}`,
       );
       const data = await res.json();
       if (data.success) setCatResults(data.data);
@@ -309,7 +293,7 @@ export default function PublishPage() {
     } finally {
       setCatSearchLoading(false);
     }
-  }, [catSearch, siteId]);
+  }, [catSearch]);
 
   const fetchAttributes = useCallback(async () => {
     if (!mlCategoryId) return;
@@ -362,6 +346,22 @@ export default function PublishPage() {
   }, [mlCategoryId]);
 
   const [aiFilling, setAiFilling] = useState(false);
+
+  const resolveValueId = (
+    attrs: CategoryAttr[],
+    attrId: string,
+    valueName: string,
+  ): string | undefined => {
+    if (!valueName) return undefined;
+    const def = attrs.find((a) => a.id === attrId);
+    if (
+      !def ||
+      (def.value_type !== "list" && def.value_type !== "boolean") ||
+      !def.values
+    )
+      return undefined;
+    return def.values.find((v) => v.name === valueName)?.id;
+  };
 
   const handleAiFill = useCallback(
     async (skuKey?: string) => {
@@ -466,8 +466,6 @@ export default function PublishPage() {
     const skus = selectedEntries
       .map(([skuKey, override]) => ({
         skuKey,
-        title: override.title || undefined,
-        description: override.description || undefined,
         price: override.price
           ? parseFloat(override.price)
           : undefined,
@@ -475,9 +473,17 @@ export default function PublishPage() {
           ? parseInt(override.quantity)
           : undefined,
         pictureIds: override.pictureIds,
-        attributes: override.attributes.filter(
-          (a) => a.value_name.trim(),
-        ),
+        attributes: override.attributes
+          .filter((a) => a.value_name.trim())
+          .map((a) => ({
+            id: a.id,
+            value_name: a.value_name,
+            value_id: resolveValueId(
+              categoryAttrs,
+              a.id,
+              a.value_name,
+            ),
+          })),
         warrantyTypeId: override.warrantyTypeId !== "6150835" ? override.warrantyTypeId : undefined,
         warrantyTime: override.warrantyTime || undefined,
         listingTypeId: override.listingTypeId as "gold_special" | "gold_pro" | undefined,
@@ -487,14 +493,19 @@ export default function PublishPage() {
       const res = await fetch("/api/mercadolibre/publish", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ productId, mlCategoryId, sites: selectedSites, skus }),
+        body: JSON.stringify({ productId, mlCategoryId, sites: selectedSites, familyName: familyName || undefined, description: description || undefined, skus }),
       });
       const data = await res.json();
       if (data.success) {
         setResult(data.data);
         toast.success("刊登完成。");
+      } else {
+        if (data.data?.results) {
+          setResult(data.data);
+        } else {
+          toast.error(data.message || "刊登失败");
+        }
       }
-      else toast.error(data.message);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "请求失败");
     } finally {
@@ -502,34 +513,31 @@ export default function PublishPage() {
     }
   };
 
-  const translateTitle = async (skuKey: string) => {
-    const text = skuOverrides[skuKey]?.title;
+  const translateFamilyName = async () => {
+    const text = familyName;
     if (!text) return;
-    setTranslating(skuKey);
+    setTranslatingFamily(true);
     try {
       const res = await fetch("/api/ai-models/translate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text }),
+        body: JSON.stringify({ text, purpose: "title_polish" }),
       });
       const data = await res.json();
       if (data.translated) {
-        setSkuOverrides((prev) => ({
-          ...prev,
-          [skuKey]: { ...prev[skuKey], title: data.translated },
-        }));
+        setFamilyName(data.translated.slice(0, 60));
       }
     } catch {
       /* ignore */
     } finally {
-      setTranslating(null);
+      setTranslatingFamily(false);
     }
   };
 
-  const translateDescription = async (skuKey: string) => {
-    const text = skuOverrides[skuKey]?.description;
+  const translateDescription = async () => {
+    const text = description;
     if (!text) return;
-    setTranslatingDesc(skuKey);
+    setTranslatingDesc(true);
     try {
       const res = await fetch("/api/ai-models/translate", {
         method: "POST",
@@ -538,15 +546,12 @@ export default function PublishPage() {
       });
       const data = await res.json();
       if (data.translated) {
-        setSkuOverrides((prev) => ({
-          ...prev,
-          [skuKey]: { ...prev[skuKey], description: data.translated },
-        }));
+        setDescription(data.translated);
       }
     } catch {
       /* ignore */
     } finally {
-      setTranslatingDesc(null);
+      setTranslatingDesc(false);
     }
   };
 
@@ -651,7 +656,17 @@ export default function PublishPage() {
         {result ? (
           <div className="mt-4 flex flex-col gap-4">
             <p className="text-sm font-medium">
-              刊登完成 — 成功 {result.succeeded}/{result.total} 个 SKU
+              {result.failed > 0 ? "刊登结果" : "刊登完成"} — 成功{" "}
+              {result.succeeded}/{result.total} 个 SKU
+              {result.publishModel ? (
+                <span className={`ml-2 inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
+                  result.publishModel === "user_product"
+                    ? "bg-yellow-100 text-yellow-800"
+                    : "bg-blue-100 text-blue-800"
+                }`}>
+                  {result.publishModel === "user_product" ? "UP 模式" : "经典模式"}
+                </span>
+              ) : null}
             </p>
             <div className="flex flex-col gap-2">
               {result.results.map((r) => (
@@ -663,9 +678,19 @@ export default function PublishPage() {
                   {r.success ? (
                     <span className="font-medium text-green-600">
                       ✓ {r.mlItemId}
+                      {r.sitelessUserProductId ? (
+                        <span className="ml-2 text-xs text-muted-foreground">
+                          UP: {r.sitelessUserProductId}
+                        </span>
+                      ) : null}
+                      {r.familyId ? (
+                        <span className="ml-2 text-xs text-muted-foreground">
+                          Family: {r.familyId}
+                        </span>
+                      ) : null}
                     </span>
                   ) : (
-                    <span className="font-medium text-destructive">
+                    <span className="font-medium text-destructive break-all">
                       ✗ {r.error}
                     </span>
                   )}
@@ -746,36 +771,6 @@ export default function PublishPage() {
                           </label>
                         )) : <span className="text-sm text-muted-foreground">加载中...</span>}
                       </div>
-                    </div>
-                    <div className="flex flex-col gap-2">
-                      <Label>分类搜索站点</Label>
-                      <Select
-                        value={siteId}
-                        onValueChange={(v) => {
-                          setSiteId(v);
-                          setMlCategoryId("");
-                          setSelectedCategoryName("");
-                          setCatResults([]);
-                        }}
-                      >
-                        <SelectTrigger className="w-48">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="MLB">
-                            Brazil (MLB)
-                          </SelectItem>
-                          <SelectItem value="MLM">
-                            Mexico (MLM)
-                          </SelectItem>
-                          <SelectItem value="MLC">
-                            Chile (MLC)
-                          </SelectItem>
-                          <SelectItem value="MCO">
-                            Colombia (MCO)
-                          </SelectItem>
-                        </SelectContent>
-                      </Select>
                     </div>
                   </div>
                 )}
@@ -883,6 +878,57 @@ export default function PublishPage() {
               </CardContent>
             </Card>
           </div>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>商品系列名称 (Family Name)</CardTitle>
+              <CardDescription>
+                UP 模式必填，所有 SKU 共享此名称。ML 将根据此名称自动生成本地化标题。
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <InputGroup>
+                <InputGroupInput
+                  value={familyName}
+                  onChange={(e) =>
+                    setFamilyName(e.target.value.slice(0, 60))
+                  }
+                  maxLength={60}
+                  placeholder="例如: Sun Protection Hat"
+                />
+                <InputGroupAddon align="inline-end">
+                  <InputGroupButton
+                    variant="outline"
+                    onClick={translateFamilyName}
+                    disabled={translatingFamily}
+                  >
+                    {translatingFamily ? "..." : "翻译"}
+                  </InputGroupButton>
+                </InputGroupAddon>
+              </InputGroup>
+            </CardContent>
+            <CardContent>
+              <div className="flex flex-col gap-2">
+                <Label>商品描述</Label>
+                <Textarea
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  rows={6}
+                  placeholder="输入商品描述（英文），所有 SKU 共用"
+                />
+                <div className="flex justify-end">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={translateDescription}
+                    disabled={translatingDesc}
+                  >
+                    {translatingDesc ? "翻译中..." : "翻译描述"}
+                  </Button>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
 
           <Card>
             <CardHeader>
@@ -998,50 +1044,6 @@ export default function PublishPage() {
                   ) : null}
 
                   <div className="mt-3 flex gap-3 items-end">
-                    <div className="flex-[2] flex flex-col gap-2">
-                      <Label>标题</Label>
-                      <InputGroup>
-                        <InputGroupInput
-                          value={
-                            skuOverrides.main?.title || ""
-                          }
-                          onChange={(e) =>
-                            setSkuOverrides((prev) => ({
-                              ...prev,
-                              main: {
-                                ...prev.main,
-                                title: e.target.value,
-                                description:
-                                  prev.main?.description || "",
-                                price:
-                                  prev.main?.price || "",
-                                quantity:
-                                  prev.main?.quantity ||
-                                  "100",
-                                pictureIds:
-                                  prev.main?.pictureIds ||
-                                  [],
-                              },
-                            }))
-                          }
-                        />
-                        <InputGroupAddon align="inline-end">
-                          <InputGroupButton
-                            variant="outline"
-                            onClick={() =>
-                              translateTitle("main")
-                            }
-                            disabled={
-                              translating === "main"
-                            }
-                          >
-                            {translating === "main"
-                              ? "..."
-                              : "翻译"}
-                          </InputGroupButton>
-                        </InputGroupAddon>
-                      </InputGroup>
-                    </div>
                     {localImages.length > 0 ? (
                       <div className="flex items-end gap-1 pb-1">
                         {localImages.map((url, j) => (
@@ -1097,10 +1099,6 @@ export default function PublishPage() {
                             main: {
                               ...prev.main,
                               price: e.target.value,
-                              title:
-                                prev.main?.title || "",
-                              description:
-                                prev.main?.description || "",
                               quantity:
                                 prev.main?.quantity ||
                                 "100",
@@ -1127,10 +1125,6 @@ export default function PublishPage() {
                             main: {
                               ...prev.main,
                               quantity: e.target.value,
-                              title:
-                                prev.main?.title || "",
-                              description:
-                                prev.main?.description || "",
                               price:
                                 prev.main?.price || "",
                               pictureIds:
@@ -1141,41 +1135,6 @@ export default function PublishPage() {
                         }
                       />
                     </div>
-                    </div>
-
-                    <div className="mt-3 flex flex-col gap-2">
-                      <Label>描述</Label>
-                      <Textarea
-                        value={
-                          skuOverrides.main?.description || ""
-                        }
-                        onChange={(e) =>
-                          setSkuOverrides((prev) => ({
-                            ...prev,
-                            main: {
-                              ...prev.main,
-                              description: e.target.value,
-                            },
-                          }))
-                        }
-                        rows={6}
-                      />
-                      <div className="flex justify-end">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() =>
-                            translateDescription("main")
-                          }
-                          disabled={
-                            translatingDesc === "main"
-                          }
-                        >
-                          {translatingDesc === "main"
-                            ? "翻译中..."
-                            : "翻译描述"}
-                        </Button>
-                      </div>
                     </div>
 
                     <div className="mt-3 flex gap-4 items-end">
@@ -1262,8 +1221,6 @@ export default function PublishPage() {
                               attr.tags?.required;
                             const mainOverride =
                               skuOverrides.main || {
-                                title: "",
-                                description: "",
                                 price: "",
                                 quantity: "100",
                                 pictureIds: [],
@@ -1365,7 +1322,6 @@ export default function PublishPage() {
                   {skuItems.map((sku) => {
                     const override =
                       skuOverrides[sku.key] || {
-                        title: "",
                         price: "",
                         quantity: "100",
                         pictureIds: [],
@@ -1468,45 +1424,6 @@ export default function PublishPage() {
                         ) : null}
 
                         <div className="mt-3 flex gap-3 items-end">
-                          <div className="flex-[2] flex flex-col gap-2">
-                            <Label>标题</Label>
-                            <InputGroup>
-                              <InputGroupInput
-                                value={override.title}
-                                onChange={(e) =>
-                                  setSkuOverrides(
-                                    (prev) => ({
-                                      ...prev,
-                                      [sku.key]: {
-                                        ...override,
-                                        title:
-                                          e.target
-                                            .value,
-                                      },
-                                    }),
-                                  )
-                                }
-                                maxLength={60}
-                              />
-                              <InputGroupAddon align="inline-end">
-                                <InputGroupButton
-                                  variant="outline"
-                                  onClick={() =>
-                                    translateTitle(
-                                      sku.key,
-                                    )
-                                  }
-                                  disabled={
-                                    translating === sku.key
-                                  }
-                                >
-                                  {translating === sku.key
-                                    ? "..."
-                                    : "翻译"}
-                                </InputGroupButton>
-                              </InputGroupAddon>
-                            </InputGroup>
-                          </div>
 {(bundle?.skuLocalImages?.[
                              sku.key
                            ] || localImages).length > 0 ? (
@@ -1597,44 +1514,6 @@ export default function PublishPage() {
                                 )
                               }
                             />
-                          </div>
-                        </div>
-
-                        <div className="mt-3 flex flex-col gap-2">
-                          <Label>描述</Label>
-                          <Textarea
-                            value={override.description || ""}
-                            onChange={(e) =>
-                              setSkuOverrides((prev) => ({
-                                ...prev,
-                                [sku.key]: {
-                                  ...override,
-                                  description:
-                                    e.target.value,
-                                },
-                              }))
-                            }
-                            rows={6}
-                          />
-                          <div className="flex justify-end">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() =>
-                                translateDescription(
-                                  sku.key,
-                                )
-                              }
-                              disabled={
-                                translatingDesc ===
-                                sku.key
-                              }
-                            >
-                              {translatingDesc ===
-                              sku.key
-                                ? "翻译中..."
-                                : "翻译描述"}
-                            </Button>
                           </div>
                         </div>
 

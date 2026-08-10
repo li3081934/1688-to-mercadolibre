@@ -1,11 +1,11 @@
-import type { MLCategory, MLCategoryAttribute, MLCreateItemRequest, MLCreateItemResponse, MLMarketplaceUserResponse, MLPredictedCategory, MLSite, MLUserResponse } from "./types";
+import type { MLCategory, MLCategoryAttribute, MLCreateItemResponse, MLCreateUPItemRequest, MLCreateUPItemResponse, MLMarketplaceUserResponse, MLPredictedCategory, MLSite, MLTestUserResponse, MLUPMappingItem, MLUserResponse } from "./types";
 
 const API_BASE = "https://api.mercadolibre.com";
 
 /**
  * 带 access_token 的 fetch 封装
  */
-async function mlFetch(endpoint: string, accessToken: string, options?: RequestInit & { timeout?: number }) {
+export async function mlFetch(endpoint: string, accessToken: string, options?: RequestInit & { timeout?: number }) {
   const url = endpoint.startsWith("http") ? endpoint : `${API_BASE}${endpoint}`;
   const timeout = options?.timeout ?? 30000;
   const controller = new AbortController();
@@ -101,25 +101,24 @@ export async function getUser(
 }
 
 /**
- * Global Selling (CBT) 创建商品刊登
- * 参考: https://global-selling.mercadolibre.com/devsite/global-listing
- * - 标题必须为英文
- * - 价格固定为 USD
- * - 描述内联在请求体中
- * - 图片使用 source URL
+ * User Products (UP) 创建商品刊登
+ * 参考: https://global-selling.mercadolibre.com/devsite/price-per-variation-cbt
+ * - 使用 family_name 代替 title
+ * - 图片只支持 { id } 格式
+ * - 不支持 variations 数组
  */
-export async function createItem(
+export async function createUPItem(
   accessToken: string,
-  itemData: MLCreateItemRequest
-): Promise<MLCreateItemResponse> {
-  console.log("[createItem] POST /global/items 请求参数:", JSON.stringify(itemData, null, 2));
+  itemData: MLCreateUPItemRequest
+): Promise<MLCreateUPItemResponse> {
+  console.log("[createUPItem] POST /global/items 请求参数:", JSON.stringify(itemData, null, 2));
   try {
     const result = await mlFetch("/global/items", accessToken, {
       method: "POST",
       body: JSON.stringify(itemData),
       timeout: 90000,
-    }) as MLCreateItemResponse;
-    console.log("[createItem] ML 接口返回:", JSON.stringify(result, null, 2));
+    }) as MLCreateUPItemResponse;
+    console.log("[createUPItem] ML 接口返回:", JSON.stringify(result, null, 2));
 
     const siteErrors = result.site_items.filter((s) => s.error);
     if (siteErrors.length > 0) {
@@ -131,7 +130,36 @@ export async function createItem(
 
     return result;
   } catch (err) {
-    console.log("[createItem] ML 接口返回(失败):", err instanceof Error ? err.message : String(err));
+    console.log("[createUPItem] ML 接口返回(失败):", err instanceof Error ? err.message : String(err));
     throw err;
   }
+}
+
+/**
+ * 查询 UP 映射关系 (siteless <-> site items)
+ * GET /marketplace/user-products/{siteless_user_product_id}/mapping
+ */
+export async function getUPMapping(
+  accessToken: string,
+  sitelessUserProductId: string
+): Promise<MLUPMappingItem[]> {
+  return mlFetch(
+    `/marketplace/user-products/${sitelessUserProductId}/mapping`,
+    accessToken
+  ) as Promise<MLUPMappingItem[]>;
+}
+
+/**
+ * 创建测试用户
+ * POST /users/test_user
+ * 需要当前应用的 ACCESS_TOKEN
+ */
+export async function createTestUser(
+  accessToken: string,
+  siteId: string
+): Promise<MLTestUserResponse> {
+  return mlFetch("/users/test_user", accessToken, {
+    method: "POST",
+    body: JSON.stringify({ site_id: siteId }),
+  }) as Promise<MLTestUserResponse>;
 }
