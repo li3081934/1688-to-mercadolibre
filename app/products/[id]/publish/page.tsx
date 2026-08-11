@@ -463,6 +463,36 @@ export default function PublishPage() {
     [categoryAttrs, bundle, product, selectedCategoryName],
   );
 
+  function handleSyncSkuAttributes(sourceSkuKey: string) {
+    const sourceOverride = skuOverrides[sourceSkuKey];
+    if (!sourceOverride) return;
+
+    const targetKeys = Array.from(selectedSkuKeys).filter(
+      (skuKey) => skuKey !== sourceSkuKey && skuOverrides[skuKey],
+    );
+    if (targetKeys.length === 0) {
+      toast.info("请先选择要同步的其他 SKU。");
+      return;
+    }
+
+    const sourceAttributes = sourceOverride.attributes.map((attribute) => ({
+      ...attribute,
+    }));
+    setSkuOverrides((prev) => {
+      const next = { ...prev };
+      for (const skuKey of targetKeys) {
+        next[skuKey] = {
+          ...next[skuKey],
+          attributes: sourceAttributes.map((attribute) => ({
+            ...attribute,
+          })),
+        };
+      }
+      return next;
+    });
+    toast.success(`已同步到 ${targetKeys.length} 个 SKU。`);
+  }
+
   const handleUploadImage = async (
     skuKey: string,
     imageUrl: string,
@@ -1376,6 +1406,12 @@ export default function PublishPage() {
                             disabled={aiFilling}
                           >
                             {aiFilling ? "AI 填写中..." : "AI 自动填写"}
+                          </Button>
+                          <Button
+                            variant="outline"
+                            onClick={() => handleSyncSkuAttributes(sku.key)}
+                          >
+                            同步到其他 SKU
                           </Button>
                         </div>
 
