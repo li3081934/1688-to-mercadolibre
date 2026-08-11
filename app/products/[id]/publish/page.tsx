@@ -24,8 +24,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { toast } from "sonner";
+import { ChevronDown } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { ChevronDown, ChevronRight } from "lucide-react";
 import {
   Dialog,
   DialogClose,
@@ -213,7 +213,6 @@ export default function PublishPage() {
   const [translatingFamily, setTranslatingFamily] = useState(false);
   const [uploadingImage, setUploadingImage] = useState<string | null>(null);
   const [uploadedImages, setUploadedImages] = useState<Record<string, UploadedImage[]>>({});
-  const [collapsedSkus, setCollapsedSkus] = useState<Set<string>>(new Set());
   const [imagePickerSku, setImagePickerSku] = useState<string | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
   const [authUrl, setAuthUrl] = useState<string | null>(null);
@@ -221,6 +220,7 @@ export default function PublishPage() {
   const [selectedSites, setSelectedSites] = useState<string[]>([]);
   const [siteSkuConfigs, setSiteSkuConfigs] = useState<Record<string, Record<string, SiteSkuConfig>>>({});
   const [publishDialogOpen, setPublishDialogOpen] = useState(false);
+  const [skuMenuOpen, setSkuMenuOpen] = useState(false);
 
   useEffect(() => {
     if (!productId) return;
@@ -255,6 +255,17 @@ export default function PublishPage() {
             listingTypeId: "gold_special",
           };
         }
+        if ((bundleData.skuItems || []).length === 0) {
+          overrides.main = {
+            price: "",
+            quantity: "100",
+            pictureIds: [],
+            attributes: [],
+            warrantyTypeId: "6150835",
+            warrantyTime: "",
+            listingTypeId: "gold_special",
+          };
+        }
         if (overrides.main) {
           overrides.main.quantity = "100";
           overrides.main.attributes = [];
@@ -265,7 +276,7 @@ export default function PublishPage() {
         setSkuOverrides(overrides);
         setFamilyName(prev => prev || baseTitle.slice(0, 60));
         setDescription(prev => prev || bundleData.mainProduct?.product?.description || "");
-        setSelectedSkuKeys(new Set(Object.keys(overrides)));
+        setSelectedSkuKeys(new Set());
       })
       .catch((e) => toast.error(e.message))
       .finally(() => setLoading(false));
@@ -771,6 +782,34 @@ export default function PublishPage() {
       ? [{ key: "main", label: product.title, skuId: product.offerId }]
       : [];
 
+  const skuRows = skuItems.length > 0
+    ? skuItems
+    : [{ key: "main", label: product.title, skuId: product.offerId }];
+  const attributeColumns = categoryAttrs.filter(
+    (attr) => attr.id !== "ITEM_CONDITION" && attr.id !== "SELLER_SKU",
+  );
+  const selectedSkuRows = skuRows.filter((sku) => selectedSkuKeys.has(sku.key));
+
+  const updateSkuAttribute = (skuKey: string, attrId: string, value: string) => {
+    setSkuOverrides((prev) => {
+      const current = prev[skuKey] || {
+        price: "",
+        quantity: "100",
+        pictureIds: [],
+        attributes: [],
+        warrantyTypeId: "6150835",
+        warrantyTime: "",
+        listingTypeId: "gold_special",
+      };
+      const attributes = current.attributes.some((attr) => attr.id === attrId)
+        ? current.attributes.map((attr) =>
+            attr.id === attrId ? { ...attr, value_name: value } : attr,
+          )
+        : [...current.attributes, { id: attrId, value_name: value }];
+      return { ...prev, [skuKey]: { ...current, attributes } };
+    });
+  };
+
   const renderUploadedImages = (skuKey: string, pictureIds: string[]) => {
     const images = uploadedImages[skuKey] || [];
     return (
@@ -1017,533 +1056,191 @@ export default function PublishPage() {
               </CardDescription>
             </CardHeader>
             <CardContent className="flex flex-col gap-4">
-              {skuItems.length > 0 ? (
-                <label className="flex cursor-pointer items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={
-                      selectedSkuKeys.size === skuItems.length
-                    }
-                    onChange={(e) =>
-                      setSelectedSkuKeys(
-                        new Set(
-                          e.target.checked
-                            ? skuItems.map((s) => s.key)
-                            : [],
-                        ),
-                      )
-                    }
-                    className="h-4 w-4 rounded border-gray-300"
-                  />
-                  全选/取消全选
-                </label>
-              ) : null}
-
-              {skuItems.length === 0 ? (
-                <div className="rounded-lg border p-4">
-                    <div className="flex items-start gap-3">
-                    <button
-                      onClick={() =>
-                        setCollapsedSkus((prev) => {
-                          const next = new Set(prev);
-                          next.has("main")
-                            ? next.delete("main")
-                            : next.add("main");
-                          return next;
-                        })
-                      }
-                      className="mt-0.5 p-0 text-muted-foreground hover:text-foreground"
-                    >
-                      {collapsedSkus.has("main") ? <ChevronRight className="h-5 w-5" /> : <ChevronDown className="h-5 w-5" />}
-                    </button>
-                    <input
-                      type="checkbox"
-                      checked={selectedSkuKeys.has("main")}
-                      onChange={(e) =>
-                        setSelectedSkuKeys((prev) => {
-                          const next = new Set(prev);
-                          e.target.checked
-                            ? next.add("main")
-                            : next.delete("main");
-                          return next;
-                        })
-                      }
-                      className="mt-1 h-4 w-4 rounded border-gray-300"
-                    />
-                    <div className="flex-1">
-                      <div className="font-medium">
-                        {product?.title}
-                      </div>
-                      <div className="text-xs text-muted-foreground">
-                        Offer ID: {product?.offerId}
-                      </div>
-                    </div>
+              <div className="relative w-full">
+                <button
+                  type="button"
+                  onClick={() => setSkuMenuOpen((open) => !open)}
+                  className="flex h-10 w-full items-center justify-between rounded-md border bg-background px-3 text-left text-sm shadow-sm"
+                  aria-expanded={skuMenuOpen}
+                  aria-haspopup="listbox"
+                >
+                  <span>选择 SKU（已选 {selectedSkuKeys.size} / {skuRows.length}）</span>
+                  <ChevronDown className={`h-4 w-4 transition-transform ${skuMenuOpen ? "rotate-180" : ""}`} />
+                </button>
+                {skuMenuOpen ? (
+                <div className="absolute left-0 right-0 top-12 z-30 rounded-md border bg-popover p-3 text-popover-foreground shadow-lg">
+                  <div className="mb-2 flex gap-2 border-b pb-3">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setSelectedSkuKeys(new Set(skuRows.map((sku) => sku.key)))}
+                  >
+                    全选
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setSelectedSkuKeys(new Set())}
+                  >
+                    清空
+                  </Button>
                   </div>
+                  {skuRows.map((sku) => (
+                    <label key={sku.key} className="flex w-full cursor-pointer items-center gap-2 rounded px-2 py-2 text-sm hover:bg-accent">
+                      <input
+                        type="checkbox"
+                        checked={selectedSkuKeys.has(sku.key)}
+                        onChange={(event) => setSelectedSkuKeys((prev) => {
+                          const next = new Set(prev);
+                          event.target.checked ? next.add(sku.key) : next.delete(sku.key);
+                          return next;
+                        })}
+                        className="h-4 w-4 rounded border-gray-300"
+                      />
+                      <span className="truncate">{sku.label}</span>
+                      <span className="text-xs text-muted-foreground">{sku.skuId}</span>
+                    </label>
+                  ))}
+                </div>
+                ) : null}
+              </div>
 
-                  {!collapsedSkus.has("main") ? (
-                  <>
-                  {skuOverrides.main?.pictureIds?.length > 0
-                    ? renderUploadedImages("main", skuOverrides.main.pictureIds)
-                    : null}
-
-                  <div className="mt-3 flex flex-wrap items-end gap-4">
-                    <Button onClick={() => openImagePicker("main")}>
-                      上传图片
-                    </Button>
-                    <div className="flex flex-col gap-2">
-                      <Label>上架类型</Label>
-                      <Select
-                        value={skuOverrides.main?.listingTypeId || "gold_special"}
-                        onValueChange={(v) =>
-                          setSkuOverrides((prev) => ({
-                            ...prev,
-                            main: { ...prev.main, listingTypeId: v },
-                          }))
-                        }
-                      >
-                        <SelectTrigger className="w-40">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="gold_special">Classic (gold_special)</SelectItem>
-                          <SelectItem value="gold_pro">Premium (gold_pro)</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="flex flex-col gap-2">
-                      <Label>保修类型</Label>
-                      <Select
-                        value={skuOverrides.main?.warrantyTypeId || "6150835"}
-                        onValueChange={(v) =>
-                          setSkuOverrides((prev) => ({
-                            ...prev,
-                            main: { ...prev.main, warrantyTypeId: v },
-                          }))
-                        }
-                      >
-                        <SelectTrigger className="w-40">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="6150835">No warranty</SelectItem>
-                          <SelectItem value="2230279">Factory warranty</SelectItem>
-                          <SelectItem value="2230278">Seller warranty</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    {skuOverrides.main?.warrantyTypeId && skuOverrides.main.warrantyTypeId !== "6150835" ? (
-                      <div className="flex flex-col gap-2">
-                        <Label>保修时长</Label>
-                        <Input
-                          className="w-32"
-                          placeholder="如: 30 days"
-                          value={skuOverrides.main?.warrantyTime || ""}
-                          onChange={(e) =>
-                            setSkuOverrides((prev) => ({
-                              ...prev,
-                              main: { ...prev.main, warrantyTime: e.target.value },
-                            }))
-                          }
-                        />
-                      </div>
-                    ) : null}
-                    <Button
-                      onClick={() => handleAiFill()}
-                      disabled={aiFilling}
-                    >
-                      {aiFilling ? "AI 填写中..." : "AI 自动填写"}
-                    </Button>
-                  </div>
-
-                  {categoryAttrs.length > 0 ? (
-                    <div className="mt-3 border-t pt-3">
-                      <label className="mb-2 block text-sm font-medium">
-                        分类属性
-                      </label>
-                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
-                        {categoryAttrs
-                          .filter(
-                            (a) =>
-                              a.id !== "ITEM_CONDITION" &&
-                              a.id !== "SELLER_SKU",
-                          )
-                          .map((attr) => {
-                            const attrVal =
-                              skuOverrides.main?.attributes?.find(
-                                (a) => a.id === attr.id,
-                              );
-                            const val =
-                              attrVal?.value_name || "";
-                            const isRequired =
-                              attr.tags?.catalog_required ||
-                              attr.tags?.required;
-                            const mainOverride =
-                              skuOverrides.main || {
-                                price: "",
-                                quantity: "100",
-                                pictureIds: [],
-                                attributes: [],
-                              };
-                            return (
-                              <div
-                                key={attr.id}
-                                className="flex flex-col gap-2"
-                              >
-                                <Label>
-                                  {bilingualText(attr.display_name, attr.name)}{" "}
-                                  {isRequired ? (
-                                    <span className="text-destructive">
-                                      *
-                                    </span>
-                                  ) : null}
-                                </Label>
-                                <Input
-                                  list={
-                                    attr.values
-                                      ? `attr-list-${attr.id}`
-                                      : undefined
-                                  }
-                                  placeholder={
-                                    attr.value_type === "number_unit"
-                                      ? `如: 30${attr.default_unit ? ` ${attr.default_unit}` : ""}`
-                                      : undefined
-                                  }
-                                  value={val}
-                                  onChange={(e) => {
-                                    const newAttrs =
-                                      mainOverride.attributes.map(
-                                        (a) =>
-                                          a.id === attr.id
-                                            ? {
-                                                ...a,
-                                                value_name:
-                                                  e.target
-                                                    .value,
-                                              }
-                                            : a,
-                                      );
-                                    if (
-                                      !mainOverride.attributes.find(
-                                        (a) =>
-                                          a.id === attr.id,
-                                      )
-                                    ) {
-                                      newAttrs.push({
-                                        id: attr.id,
-                                        value_name:
-                                          e.target.value,
-                                      });
-                                    }
-                                    setSkuOverrides(
-                                      (prev) => ({
-                                        ...prev,
-                                        main: {
-                                          ...mainOverride,
-                                          attributes:
-                                            newAttrs,
-                                        },
-                                      }),
-                                    );
-                                  }}
-                                />
-                                {attr.values?.length ? (
-                                  <datalist
-                                    id={`attr-list-${attr.id}`}
-                                  >
-                                    {attr.values.map(
-                                      (v) => (
-                                        <option
-                                          key={v.id}
-                                          value={v.name}
-                                          label={bilingualText(
-                                            attr.display_values?.find((displayValue) => displayValue.id === v.id)?.display_name,
-                                            v.name,
-                                          )}
-                                        />
-                                      ),
-                                    )}
-                                  </datalist>
-                                ) : null}
-                              </div>
-                            );
-                          })}
-                      </div>
-                    </div>
-                  ) : null}
-                  </>
-                  ) : null}
+              {!selectedSkuRows.length ? (
+                <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
+                  请从上方选择 SKU，选中的 SKU 会显示在下方表格中。
                 </div>
               ) : (
-                <div className="flex flex-col gap-3">
-                  {skuItems.map((sku) => {
-                    const override =
-                      skuOverrides[sku.key] || {
-                        price: "",
-                        quantity: "100",
-                        pictureIds: [],
-                      };
-                    return (
-                      <div
-                        key={sku.key}
-                        className="rounded-lg border p-4"
-                      >
-                        <div className="flex items-start gap-3">
-                          <button
-                            onClick={() =>
-                              setCollapsedSkus((prev) => {
-                                const next = new Set(prev);
-                                next.has(sku.key)
-                                  ? next.delete(sku.key)
-                                  : next.add(sku.key);
-                                return next;
-                              })
-                            }
-                            className="mt-0.5 p-0 text-muted-foreground hover:text-foreground"
-                          >
-                            {collapsedSkus.has(sku.key) ? <ChevronRight className="h-5 w-5" /> : <ChevronDown className="h-5 w-5" />}
-                          </button>
-                          <input
-                            type="checkbox"
-                            checked={selectedSkuKeys.has(
-                              sku.key,
-                            )}
-                            onChange={(e) =>
-                              setSelectedSkuKeys(
-                                (prev) => {
-                                  const next = new Set(
-                                    prev,
-                                  );
-                                  e.target.checked
-                                    ? next.add(sku.key)
-                                    : next.delete(
-                                        sku.key,
-                                      );
-                                  return next;
-                                },
-                              )
-                            }
-                            className="mt-1 h-4 w-4 rounded border-gray-300"
-                          />
-                          <div className="flex-1">
-                            <div className="font-medium">
-                              {sku.label}
-                            </div>
-                            <div className="text-xs text-muted-foreground">
-                              SKU ID: {sku.skuId}
-                            </div>
-                          </div>
-                        </div>
-
-                        {!collapsedSkus.has(sku.key) ? (
-                        <>
-                        {override.pictureIds.length > 0
-                          ? renderUploadedImages(sku.key, override.pictureIds)
-                          : null}
-
-                        <div className="mt-3 flex flex-wrap items-end gap-4">
-                          <Button onClick={() => openImagePicker(sku.key)}>
-                            上传图片
-                          </Button>
-                          <div className="flex flex-col gap-2">
-                            <Label>上架类型</Label>
-                            <Select
-                              value={override.listingTypeId || "gold_special"}
-                              onValueChange={(v) =>
-                                setSkuOverrides((prev) => ({
-                                  ...prev,
-                                  [sku.key]: { ...override, listingTypeId: v },
-                                }))
-                              }
-                            >
-                              <SelectTrigger className="w-40">
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="gold_special">Classic (gold_special)</SelectItem>
-                                <SelectItem value="gold_pro">Premium (gold_pro)</SelectItem>
-                              </SelectContent>
-                            </Select>
-                          </div>
-                          <div className="flex flex-col gap-2">
-                            <Label>保修类型</Label>
-                            <Select
-                              value={override.warrantyTypeId || "6150835"}
-                              onValueChange={(v) =>
-                                setSkuOverrides((prev) => ({
-                                  ...prev,
-                                  [sku.key]: { ...override, warrantyTypeId: v },
-                                }))
-                              }
-                            >
-                              <SelectTrigger className="w-40">
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="6150835">No warranty</SelectItem>
-                                <SelectItem value="2230279">Factory warranty</SelectItem>
-                                <SelectItem value="2230278">Seller warranty</SelectItem>
-                              </SelectContent>
-                            </Select>
-                          </div>
-                          {override.warrantyTypeId && override.warrantyTypeId !== "6150835" ? (
-                            <div className="flex flex-col gap-2">
-                              <Label>保修时长</Label>
-                              <Input
-                                className="w-32"
-                                placeholder="如: 30 days"
-                                value={override.warrantyTime || ""}
-                                onChange={(e) =>
-                                  setSkuOverrides((prev) => ({
-                                    ...prev,
-                                    [sku.key]: { ...override, warrantyTime: e.target.value },
-                                  }))
-                                }
-                              />
-                            </div>
-                          ) : null}
-                          <Button
-                            onClick={() => handleAiFill(sku.key)}
-                            disabled={aiFilling}
-                          >
-                            {aiFilling ? "AI 填写中..." : "AI 自动填写"}
-                          </Button>
-                          <Button
-                            variant="outline"
-                            onClick={() => handleSyncSkuAttributes(sku.key)}
-                          >
-                            同步到其他 SKU
-                          </Button>
-                        </div>
-
-                        {categoryAttrs.length > 0 ? (
-                          <div className="mt-3 border-t pt-3">
-                            <label className="mb-2 block text-sm font-medium">
-                              分类属性
-                            </label>
-                            <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
-                              {categoryAttrs
-                                .filter(
-                                  (a) =>
-                                    a.id !==
-                                      "ITEM_CONDITION" &&
-                                    a.id !== "SELLER_SKU",
-                                )
-                                .map((attr) => {
-                                  const attrVal =
-                                    override.attributes.find(
-                                      (a) =>
-                                        a.id === attr.id,
-                                    );
-                                  const val =
-                                    attrVal?.value_name ||
-                                    "";
-                                  const isRequired =
-                                    attr.tags
-                                      ?.catalog_required ||
-                                    attr.tags?.required;
-                                  return (
-                                    <div
-                                      key={attr.id}
-                                      className="flex flex-col gap-2"
-                                    >
-                                      <Label>
-                                        {bilingualText(attr.display_name, attr.name)}{" "}
-                                        {isRequired ? (
-                                          <span className="text-destructive">
-                                            *
-                                          </span>
-                                        ) : null}
-                                      </Label>
-                                      <Input
-                                        list={
-                                          attr.values
-                                            ? `attr-list-${sku.key}-${attr.id}`
-                                            : undefined
-                                        }
-                                        placeholder={
-                                          attr.value_type === "number_unit"
-                                            ? `如: 30${attr.default_unit ? ` ${attr.default_unit}` : ""}`
-                                            : undefined
-                                        }
-                                        value={val}
-                                        onChange={(
-                                          e,
-                                        ) => {
-                                          const newAttrs =
-                                            override.attributes.map(
-                                              (a) =>
-                                                a.id ===
-                                                attr.id
-                                                  ? {
-                                                      ...a,
-                                                      value_name:
-                                                        e
-                                                          .target
-                                                          .value,
-                                                    }
-                                                  : a,
-                                            );
-                                          if (
-                                            !override.attributes.find(
-                                              (a) =>
-                                                a.id ===
-                                                attr.id,
-                                            )
-                                          ) {
-                                            newAttrs.push(
-                                              {
-                                                id: attr.id,
-                                                value_name:
-                                                  e.target
-                                                    .value,
-                                              },
-                                            );
-                                          }
-                                          setSkuOverrides(
-                                            (prev) => ({
-                                              ...prev,
-                                              [sku.key]:
-                                                {
-                                                  ...override,
-                                                  attributes:
-                                                    newAttrs,
-                                                },
-                                            }),
-                                          );
-                                        }}
-                                      />
-                                      {attr.values
-                                        ?.length ? (
-                                        <datalist
-                                          id={`attr-list-${sku.key}-${attr.id}`}
-                                        >
-                                          {attr.values.map(
-                                            (v) => (
-                                              <option
-                                                key={
-                                                  v.id
-                                                }
-                                                value={v.name}
-                                                label={bilingualText(
-                                                  attr.display_values?.find((displayValue) => displayValue.id === v.id)?.display_name,
-                                                  v.name,
-                                                )}
-                                              />
-                                            ),
+                <div className="overflow-x-auto rounded-md border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="sticky left-0 z-10 min-w-52 bg-background">SKU</TableHead>
+                        <TableHead className="min-w-32">图片</TableHead>
+                        <TableHead className="min-w-48">AI / 同步</TableHead>
+                        {attributeColumns.map((attr) => (
+                          <TableHead key={attr.id} className="min-w-48">
+                            {bilingualText(attr.display_name, attr.name)}
+                            {attr.tags?.catalog_required || attr.tags?.required ? (
+                              <span className="ml-1 text-destructive">*</span>
+                            ) : null}
+                          </TableHead>
+                        ))}
+                        <TableHead className="min-w-40">上架类型</TableHead>
+                        <TableHead className="min-w-44">保修</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {selectedSkuRows.map((sku) => {
+                        const override = skuOverrides[sku.key] || {
+                          price: "",
+                          quantity: "100",
+                          pictureIds: [],
+                          attributes: [],
+                          warrantyTypeId: "6150835",
+                          warrantyTime: "",
+                          listingTypeId: "gold_special",
+                        };
+                        return (
+                          <TableRow key={sku.key}>
+                            <TableCell className="sticky left-0 z-10 min-w-52 bg-background align-top">
+                              <div className="font-medium">{sku.label}</div>
+                              <div className="text-xs text-muted-foreground">SKU ID: {sku.skuId}</div>
+                            </TableCell>
+                            <TableCell className="min-w-32 align-top">
+                              <Button type="button" size="sm" variant="outline" onClick={() => openImagePicker(sku.key)}>
+                                上传图片
+                              </Button>
+                              <div className="mt-1 text-xs text-muted-foreground">
+                                已上传 {override.pictureIds.length} 张
+                              </div>
+                            </TableCell>
+                            <TableCell className="min-w-48 align-top">
+                              <div className="flex flex-col gap-2">
+                                <Button type="button" size="sm" onClick={() => handleAiFill(sku.key)} disabled={aiFilling}>
+                                  {aiFilling ? "AI 填写中..." : "AI 自动填写"}
+                                </Button>
+                                <Button type="button" size="sm" variant="outline" onClick={() => handleSyncSkuAttributes(sku.key)}>
+                                  同步到其他 SKU
+                                </Button>
+                              </div>
+                            </TableCell>
+                            {attributeColumns.map((attr) => {
+                              const value = override.attributes.find((item) => item.id === attr.id)?.value_name || "";
+                              return (
+                                <TableCell key={attr.id} className="min-w-48 align-top">
+                                  <Input
+                                    list={attr.values?.length ? `attr-list-${sku.key}-${attr.id}` : undefined}
+                                    placeholder={attr.value_type === "number_unit" ? `如: 30${attr.default_unit ? ` ${attr.default_unit}` : ""}` : undefined}
+                                    value={value}
+                                    onChange={(event) => updateSkuAttribute(sku.key, attr.id, event.target.value)}
+                                  />
+                                  {attr.values?.length ? (
+                                    <datalist id={`attr-list-${sku.key}-${attr.id}`}>
+                                      {attr.values.map((valueOption) => (
+                                        <option
+                                          key={valueOption.id}
+                                          value={valueOption.name}
+                                          label={bilingualText(
+                                            attr.display_values?.find((displayValue) => displayValue.id === valueOption.id)?.display_name,
+                                            valueOption.name,
                                           )}
-                                        </datalist>
-                                      ) : null}
-                                    </div>
-                                  );
-                                })}
-                            </div>
-                          </div>
-                        ) : null}
-                        </>
-                        ) : null}
-                      </div>
-                    );
-                  })}
+                                        />
+                                      ))}
+                                    </datalist>
+                                  ) : null}
+                                </TableCell>
+                              );
+                            })}
+                            <TableCell className="min-w-40 align-top">
+                              <Select
+                                value={override.listingTypeId || "gold_special"}
+                                onValueChange={(value) => setSkuOverrides((prev) => ({
+                                  ...prev,
+                                  [sku.key]: { ...override, listingTypeId: value },
+                                }))}
+                              >
+                                <SelectTrigger><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="gold_special">Classic</SelectItem>
+                                  <SelectItem value="gold_pro">Premium</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </TableCell>
+                            <TableCell className="min-w-44 align-top">
+                              <div className="flex flex-col gap-2">
+                                <Select
+                                  value={override.warrantyTypeId || "6150835"}
+                                  onValueChange={(value) => setSkuOverrides((prev) => ({
+                                    ...prev,
+                                    [sku.key]: { ...override, warrantyTypeId: value },
+                                  }))}
+                                >
+                                  <SelectTrigger><SelectValue /></SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="6150835">No warranty</SelectItem>
+                                    <SelectItem value="2230279">Factory warranty</SelectItem>
+                                    <SelectItem value="2230278">Seller warranty</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                                {override.warrantyTypeId !== "6150835" ? (
+                                  <Input
+                                    placeholder="如: 30 days"
+                                    value={override.warrantyTime || ""}
+                                    onChange={(event) => setSkuOverrides((prev) => ({
+                                      ...prev,
+                                      [sku.key]: { ...override, warrantyTime: event.target.value },
+                                    }))}
+                                  />
+                                ) : null}
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
                 </div>
               )}
 
@@ -1781,37 +1478,53 @@ export default function PublishPage() {
       >
         <DialogContent className="max-w-4xl">
           <DialogHeader>
-            <DialogTitle>选择图片上传</DialogTitle>
+            <DialogTitle>
+              {imagePickerSku
+                ? `图片管理：${skuRows.find((sku) => sku.key === imagePickerSku)?.label || imagePickerSku}`
+                : "选择图片上传"}
+            </DialogTitle>
           </DialogHeader>
           {imagePickerSku ? (
-            imageEntries.length > 0 ? (
-              <div className="grid max-h-[70vh] grid-cols-2 gap-4 overflow-y-auto sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
-                {imageEntries.map((entry) => {
-                  const isUploaded = uploadedImages[imagePickerSku]?.some((image) => image.sourceUrl === entry.url) || false;
-                  const isUploading = uploadingImage === `${imagePickerSku}:${entry.url}`;
-                  return (
-                    <div key={entry.url} className="flex flex-col items-center gap-2">
-                      <img
-                        src={entry.url}
-                        alt={entry.label}
-                        className="h-[100px] w-[100px] rounded border object-cover"
-                        onError={(event) => {
-                          event.currentTarget.style.display = "none";
-                        }}
-                      />
-                      <Button
-                        disabled={isUploaded || isUploading}
-                        onClick={() => handleUploadImage(imagePickerSku, entry.url)}
-                      >
-                        {isUploading ? "上传中..." : isUploaded ? "已上传" : "上传"}
-                      </Button>
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <p className="text-sm text-muted-foreground">没有可上传的候选图片。</p>
-            )
+            <div className="flex max-h-[70vh] flex-col gap-5 overflow-y-auto">
+              {skuOverrides[imagePickerSku]?.pictureIds.length ? (
+                renderUploadedImages(
+                  imagePickerSku,
+                  skuOverrides[imagePickerSku].pictureIds,
+                )
+              ) : (
+                <p className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
+                  暂无已上传图片，可从下方候选图片中上传。
+                </p>
+              )}
+              {imageEntries.length > 0 ? (
+                <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+                  {imageEntries.map((entry) => {
+                    const isUploaded = uploadedImages[imagePickerSku]?.some((image) => image.sourceUrl === entry.url) || false;
+                    const isUploading = uploadingImage === `${imagePickerSku}:${entry.url}`;
+                    return (
+                      <div key={entry.url} className="flex flex-col items-center gap-2">
+                        <img
+                          src={entry.url}
+                          alt={entry.label}
+                          className="h-[100px] w-[100px] rounded border object-cover"
+                          onError={(event) => {
+                            event.currentTarget.style.display = "none";
+                          }}
+                        />
+                        <Button
+                          disabled={isUploaded || isUploading}
+                          onClick={() => handleUploadImage(imagePickerSku, entry.url)}
+                        >
+                          {isUploading ? "上传中..." : isUploaded ? "已上传" : "上传"}
+                        </Button>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">没有可上传的候选图片。</p>
+              )}
+            </div>
           ) : null}
         </DialogContent>
       </Dialog>
