@@ -1,0 +1,30 @@
+app/api/mercadolibre/publish/route.ts
+  s_bbf5911ee6038c::t_c3c4426849c6dd 10,120-125,197-198,200-202,204-207,209,211,213-215,222
+lib/mercadolibre/client.ts
+  s_bbf5911ee6038c::t_2987db9e9a1ce4 247,260
+  s_bbf5911ee6038c::t_4339e1965adc43 1,233-246,248-259
+lib/mercadolibre/types.ts
+  s_bbf5911ee6038c::t_375b761abe74a9 105
+  s_bbf5911ee6038c::t_d71ed17bad96ed 106-107
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "6382b08903f07339199581cae1c535b554a0daa0",
+  "prompts": {},
+  "humans": {
+    "h_04504ebe54ce64": {
+      "author": "lijs8 <lijs8@lenovo.com>"
+    }
+  },
+  "sessions": {
+    "s_bbf5911ee6038c": {
+      "agent_id": {
+        "tool": "github-copilot",
+        "id": "7892f1e3-cbd6-4edd-9648-43d61c8b16a5",
+        "model": "copilot/gpt-5.6-luna"
+      },
+      "human_author": "lijs8 <lijs8@lenovo.com>"
+    }
+  }
+}
