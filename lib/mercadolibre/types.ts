@@ -102,6 +102,9 @@ export type MLCreateUPItemRequest = {
   global_net_proceeds?: number;
 };
 
+export type MLCreateUPItemsBatchRequest = MLCreateUPItemRequest[];
+export type MLCreateUPItemsBatchResponse = MLCreateUPItemResponse[];
+
 export type MLCreateUPItemResponse = MLCreateItemResponse & {
   parent_user_product_id?: string;
   siteless_user_product_id?: string;

@@ -1,4 +1,4 @@
-import type { MLCategory, MLCategoryAttribute, MLCreateItemResponse, MLCreateUPItemRequest, MLCreateUPItemResponse, MLMarketplaceUserResponse, MLPredictedCategory, MLSite, MLTestUserResponse, MLUPMappingItem, MLUserResponse } from "./types";
+import type { MLCategory, MLCategoryAttribute, MLCreateItemResponse, MLCreateUPItemRequest, MLCreateUPItemResponse, MLCreateUPItemsBatchRequest, MLCreateUPItemsBatchResponse, MLMarketplaceUserResponse, MLPredictedCategory, MLSite, MLTestUserResponse, MLUPMappingItem, MLUserResponse } from "./types";
 
 const API_BASE = "https://api.mercadolibre.com";
 
@@ -230,4 +230,32 @@ export async function getCurrentPublishedItems(
   }
 
   return items;
+}
+
+/**
+ * 批量创建同一商品族下的多个 User Product
+ * POST /global/user-products/families
+ */
+export async function createUPItemsBatch(
+  accessToken: string,
+  items: MLCreateUPItemsBatchRequest,
+): Promise<MLCreateUPItemsBatchResponse> {
+  if (items.length === 0) {
+    return [];
+  }
+
+    console.log("[createUPItemsBatch] POST /global/user-products/families 请求数量:", items.length);
+  const result = await mlFetch("/global/user-products/families", accessToken, {
+    method: "POST",
+    body: JSON.stringify(items),
+    timeout: 90000,
+  }) as MLCreateUPItemsBatchResponse;
+
+  if (!Array.isArray(result)) {
+    throw new Error("批量 UP 刊登失败：接口返回格式无效。");
+  }
+
+  console.log("[createUPItemsBatch] ML 接口返回数量:", result.length);
+  return result;
+
 }

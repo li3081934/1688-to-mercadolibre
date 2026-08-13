@@ -7,7 +7,7 @@ import {
   updateProduct,
   upsertMLPublishedProductMapping,
 } from "@/lib/db";
-import { createUPItem, getMarketplaceUsers } from "@/lib/mercadolibre/client";
+import { createUPItemsBatch, getMarketplaceUsers } from "@/lib/mercadolibre/client";
 import {
   buildAvailableQuantity,
   buildFamilyName,
@@ -117,6 +117,12 @@ export async function POST(request: Request) {
     const familyName = bodyFamilyName?.trim() || autoFamilyName;
     const globalDescription = description?.trim() ?? "";
 
+    const pendingItems: Array<{
+      skuItem: (typeof skuItemsToPublish)[number];
+      generatedSku: string;
+      itemPayload: Parameters<typeof createUPItemsBatch>[1][number];
+    }> = [];
+
     for (const skuItem of skuItemsToPublish) {
       const override = skuOverrideMap.get(skuItem.key);
       const generatedSku = `MER${randomUUID().replace(/-/g, "").slice(0, 8)}`;
@@ -188,21 +194,32 @@ export async function POST(request: Request) {
         sale_terms: buildSaleTerms(override?.warrantyTypeId, override?.warrantyTime),
         description: { plain_text: globalDescription },
       };
+      pendingItems.push({ skuItem, generatedSku, itemPayload });
+    }
 
-      let createdItem: Awaited<ReturnType<typeof createUPItem>> | null = null;
-      let publishError: string | undefined;
+    let batchResults: Awaited<ReturnType<typeof createUPItemsBatch>> = [];
+    let batchError: string | undefined;
+    if (pendingItems.length > 0) {
       try {
-        createdItem = await createUPItem(token, itemPayload);
+        batchResults = await createUPItemsBatch(
+          token,
+          pendingItems.map(({ itemPayload }) => itemPayload),
+        );
       } catch (err) {
-        publishError = err instanceof Error ? err.message : "UP 刊登失败";
+        batchError = err instanceof Error ? err.message : "批量 UP 刊登失败";
       }
+    }
 
+    for (let index = 0; index < pendingItems.length; index += 1) {
+      const { skuItem, generatedSku } = pendingItems[index];
+      const createdItem = batchResults[index];
       const siteResults = createdItem?.site_items || [];
       const successfulSiteItems = siteResults.filter((site) => site.item_id && !site.error);
       const siteErrors = siteResults
         .filter((site) => !site.item_id || site.error)
         .map((site) => `[${site.site_id}] ${site.error?.error || site.error?.message || "接口未返回商品 ID"}`);
       const successful = successfulSiteItems.length > 0;
+      const publishError = batchError || (!createdItem ? "批量接口未返回该 SKU 的结果" : undefined);
       results.push({
         skuKey: skuItem.key,
         skuLabel: skuItem.label,
