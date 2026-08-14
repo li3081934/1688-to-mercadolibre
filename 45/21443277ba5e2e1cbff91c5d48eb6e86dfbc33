@@ -1,0 +1,50 @@
+app/api/products/[id]/images/route.ts
+  h_04504ebe54ce64 1-53
+lib/ai/client.ts
+  s_933db2d377b01d::t_715d1b666828de 145-146,156-157,159-161,173-177,183-210
+  s_933db2d377b01d::t_f6f51da9b3a5c4 142-144,163-172
+  s_47f8a1057e8a57::t_fa452f2a290bdb 211-224,233,236-237
+  s_47f8a1057e8a57::t_0ae4e46e70859e 22-35,147-155,158,162,178-182
+  s_47f8a1057e8a57::t_58b0ac9b365717 225-232
+  s_933db2d377b01d::t_c683e99bd6043d 3-7,120-141,234-235,238-267
+app/products/[id]/publish/page.tsx
+  s_933db2d377b01d::t_42a9000b6366d1 217,219-220,229-230,593-620,625-633,1642-1647,1649-1652,1654-1658,1682-1686,1703-1723
+  s_47f8a1057e8a57::t_e0e53adb7fbdc0 952-956
+  s_47f8a1057e8a57::t_b63cd045f0ae7f 561-592,1600-1624
+  s_47f8a1057e8a57::t_d5ce5b9ead4681 623
+  s_47f8a1057e8a57::t_f1ff647162f279 3,228,231-241,1154
+  s_47f8a1057e8a57::t_b847a666d0ae59 218,621-622,624,1648,1653,1659-1681,1687-1702
+app/api/products/[id]/images/generate/route.ts
+  s_47f8a1057e8a57::t_0f4001ac6d32b7 71-72
+  s_47f8a1057e8a57::t_d5ce5b9ead4681 81
+  h_04504ebe54ce64 1-70,73-80,82-87
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "4521443277ba5e2e1cbff91c5d48eb6e86dfbc33",
+  "prompts": {},
+  "humans": {
+    "h_04504ebe54ce64": {
+      "author": "lijs8 <lijs8@lenovo.com>"
+    }
+  },
+  "sessions": {
+    "s_47f8a1057e8a57": {
+      "agent_id": {
+        "tool": "github-copilot",
+        "id": "b2629b57-88d4-4776-bee1-fc0330cf5a97",
+        "model": "copilot/gpt-5.6-luna"
+      },
+      "human_author": "lijs8 <lijs8@lenovo.com>"
+    },
+    "s_933db2d377b01d": {
+      "agent_id": {
+        "tool": "github-copilot",
+        "id": "80ee1049-9a6d-40ef-8bd5-0591ab7f9dc0",
+        "model": "copilot/gpt-5.6-luna"
+      },
+      "human_author": "lijs8 <lijs8@lenovo.com>"
+    }
+  }
+}
