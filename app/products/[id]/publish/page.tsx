@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
@@ -214,6 +214,10 @@ export default function PublishPage() {
   const [uploadingImage, setUploadingImage] = useState<string | null>(null);
   const [uploadedImages, setUploadedImages] = useState<Record<string, UploadedImage[]>>({});
   const [imagePickerSku, setImagePickerSku] = useState<string | null>(null);
+  const [previewImage, setPreviewImage] = useState<ImageEntry | null>(null);
+  const [generatedPreviewImage, setGeneratedPreviewImage] = useState<ImageEntry | null>(null);
+  const [imagePrompt, setImagePrompt] = useState("");
+  const [generatingImage, setGeneratingImage] = useState(false);
   const [authChecked, setAuthChecked] = useState(false);
   const [authUrl, setAuthUrl] = useState<string | null>(null);
   const [availableSites, setAvailableSites] = useState<string[]>([]);
@@ -221,6 +225,20 @@ export default function PublishPage() {
   const [siteSkuConfigs, setSiteSkuConfigs] = useState<Record<string, Record<string, SiteSkuConfig>>>({});
   const [publishDialogOpen, setPublishDialogOpen] = useState(false);
   const [skuMenuOpen, setSkuMenuOpen] = useState(false);
+  const skuMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!skuMenuOpen) return;
+
+    const handlePointerDown = (event: PointerEvent) => {
+      if (!skuMenuRef.current?.contains(event.target as Node)) {
+        setSkuMenuOpen(false);
+      }
+    };
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => document.removeEventListener("pointerdown", handlePointerDown);
+  }, [skuMenuOpen]);
 
   useEffect(() => {
     if (!productId) return;
@@ -537,6 +555,79 @@ export default function PublishPage() {
       toast.error(e instanceof Error ? e.message : "上传图片失败");
     } finally {
       setUploadingImage(null);
+    }
+  };
+
+  const handleDeleteCandidateImage = async (imageUrl: string, label: string) => {
+    if (!window.confirm(`确认删除候选图片「${label}」吗？删除后无法恢复。`)) return;
+
+    try {
+      const res = await fetch(`/api/products/${productId}/images`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ imageUrl }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        toast.error(data.message || "删除图片失败");
+        return;
+      }
+
+      const bundleRes = await fetch(`/api/products/${productId}/bundle`);
+      const bundleData = await bundleRes.json();
+      if (!bundleRes.ok || bundleData.error) {
+        toast.error(bundleData.error || "刷新图片列表失败");
+        return;
+      }
+      setBundle(bundleData);
+      if (previewImage?.url === imageUrl) {
+        setPreviewImage(null);
+        setGeneratedPreviewImage(null);
+      }
+      toast.success("候选图片已删除");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "删除图片失败");
+    }
+  };
+
+  const handleGenerateImage = async () => {
+    if (!previewImage) return;
+    const prompt = imagePrompt.trim();
+    if (!prompt) {
+      toast.error("请输入 AI 提示词");
+      return;
+    }
+
+    setGeneratingImage(true);
+    try {
+      const res = await fetch(`/api/products/${productId}/images/generate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sourceUrl: previewImage.url, prompt }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        toast.error(data.message || "生成图片失败");
+        return;
+      }
+
+      const bundleRes = await fetch(`/api/products/${productId}/bundle`);
+      const bundleData = await bundleRes.json();
+      if (!bundleRes.ok || bundleData.error) {
+        toast.error(bundleData.error || "刷新图片列表失败");
+        return;
+      }
+      setBundle(bundleData);
+      setGeneratedPreviewImage({
+        url: data.imageUrl,
+        label: data.imageName || `${previewImage.label}-ai`,
+      });
+      setImagePrompt("");
+      toast.success("图片已生成并保存");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "生成图片失败");
+    } finally {
+      setGeneratingImage(false);
     }
   };
 
@@ -858,7 +949,11 @@ export default function PublishPage() {
                 </span>
                 <button
                   type="button"
-                  onClick={() => removePictureId(skuKey, index)}
+                  onClick={() => {
+                    if (window.confirm(`确认删除图片 ${id} 吗？`)) {
+                      removePictureId(skuKey, index);
+                    }
+                  }}
                   className="absolute right-1 top-1 rounded bg-background/90 px-1 text-sm text-destructive opacity-0 shadow transition-opacity group-hover:opacity-100"
                   aria-label={`删除图片 ${id}`}
                 >
@@ -1056,7 +1151,7 @@ export default function PublishPage() {
               </CardDescription>
             </CardHeader>
             <CardContent className="flex flex-col gap-4">
-              <div className="relative w-full">
+              <div ref={skuMenuRef} className="relative w-full">
                 <button
                   type="button"
                   onClick={() => setSkuMenuOpen((open) => !open)}
@@ -1502,15 +1597,31 @@ export default function PublishPage() {
                     const isUploaded = uploadedImages[imagePickerSku]?.some((image) => image.sourceUrl === entry.url) || false;
                     const isUploading = uploadingImage === `${imagePickerSku}:${entry.url}`;
                     return (
-                      <div key={entry.url} className="flex flex-col items-center gap-2">
-                        <img
-                          src={entry.url}
-                          alt={entry.label}
-                          className="h-[100px] w-[100px] rounded border object-cover"
-                          onError={(event) => {
-                            event.currentTarget.style.display = "none";
-                          }}
-                        />
+                      <div key={entry.url} className="group relative flex flex-col items-center gap-2">
+                        <div className="relative">
+                          <img
+                            src={entry.url}
+                            alt={entry.label}
+                            className="h-[100px] w-[100px] cursor-pointer rounded border object-cover transition hover:opacity-80"
+                            onClick={() => {
+                              setPreviewImage(entry);
+                              setGeneratedPreviewImage(null);
+                              setImagePrompt("");
+                            }}
+                            onError={(event) => {
+                              event.currentTarget.style.display = "none";
+                            }}
+                          />
+                          <button
+                            type="button"
+                            title="删除候选图片"
+                            aria-label={`删除候选图片 ${entry.label}`}
+                            onClick={() => handleDeleteCandidateImage(entry.url, entry.label)}
+                            className="absolute right-1 top-1 rounded bg-background/90 px-1 text-sm text-destructive opacity-0 shadow transition-opacity group-hover:opacity-100"
+                          >
+                            &times;
+                          </button>
+                        </div>
                         <Button
                           disabled={isUploaded || isUploading}
                           onClick={() => handleUploadImage(imagePickerSku, entry.url)}
@@ -1524,6 +1635,88 @@ export default function PublishPage() {
               ) : (
                 <p className="text-sm text-muted-foreground">没有可上传的候选图片。</p>
               )}
+            </div>
+          ) : null}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={!!previewImage}
+        onOpenChange={(open) => {
+          if (!open) {
+            setPreviewImage(null);
+            setGeneratedPreviewImage(null);
+            setImagePrompt("");
+          }
+        }}
+      >
+        <DialogContent className="max-w-5xl">
+          <DialogHeader>
+            <DialogTitle>{previewImage?.label || "图片预览"}</DialogTitle>
+          </DialogHeader>
+          {previewImage ? (
+            <div className="flex max-h-[75vh] flex-col gap-4 overflow-y-auto">
+              <div className="grid min-h-[280px] grid-cols-1 gap-4 md:grid-cols-2">
+                <div className="flex flex-col gap-2 rounded-md border bg-muted/20 p-3">
+                  <span className="text-sm font-medium">原图</span>
+                  <div className="flex min-h-[240px] items-center justify-center">
+                    <img
+                      src={previewImage.url}
+                      alt={previewImage.label}
+                      className="max-h-[48vh] max-w-full object-contain"
+                    />
+                  </div>
+                </div>
+                {generatedPreviewImage ? (
+                  <div className="flex flex-col gap-2 rounded-md border bg-muted/20 p-3">
+                    <span className="text-sm font-medium">{generatedPreviewImage.label}</span>
+                    <div className="flex min-h-[240px] items-center justify-center">
+                      <img
+                        src={generatedPreviewImage.url}
+                        alt={generatedPreviewImage.label}
+                        className="max-h-[48vh] max-w-full object-contain"
+                      />
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+              <div className="space-y-2">
+                <label htmlFor="image-prompt" className="text-sm font-medium">
+                  AI 图片提示词
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  {["去掉图片上的文字", "把图片上的文字翻译成英文"].map((tag) => (
+                    <Button
+                      key={tag}
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setImagePrompt((current) => (
+                        current.trim() ? `${current.trim()}，${tag}` : tag
+                      ))}
+                      disabled={generatingImage}
+                    >
+                      {tag}
+                    </Button>
+                  ))}
+                </div>
+                <Textarea
+                  id="image-prompt"
+                  value={imagePrompt}
+                  onChange={(event) => setImagePrompt(event.target.value)}
+                  placeholder="例如：保留产品外观，换成干净的白色背景和自然光"
+                  rows={4}
+                  disabled={generatingImage}
+                />
+              </div>
+              <div className="flex justify-end gap-3">
+                <DialogClose asChild>
+                  <Button variant="outline">关闭</Button>
+                </DialogClose>
+                <Button onClick={handleGenerateImage} disabled={generatingImage || !imagePrompt.trim()}>
+                  {generatingImage ? "生成中..." : "生成图片"}
+                </Button>
+              </div>
             </div>
           ) : null}
         </DialogContent>
