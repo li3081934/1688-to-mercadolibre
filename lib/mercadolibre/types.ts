@@ -33,9 +33,14 @@ export type MLTestUserResponse = {
 export type MLCategory = {
   id: string;
   name: string;
-  picture: string | null;
-  total_items_in_this_category: number;
-  children: MLCategory[];
+  picture?: string | null;
+  total_items_in_this_category?: number;
+  children?: MLCategory[];
+  children_categories?: Array<{
+    id: string;
+    name: string;
+    total_items_in_this_category?: number;
+  }>;
   path_from_root?: Array<{ id: string; name: string }>;
 };
 

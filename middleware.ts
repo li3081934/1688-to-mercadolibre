@@ -16,6 +16,12 @@ export function middleware(request: NextRequest) {
 
   const token = request.cookies.get("auth_token");
   if (!token?.value) {
+    if (pathname.startsWith("/api/")) {
+      return NextResponse.json(
+        { success: false, message: "未登录，请先登录系统。" },
+        { status: 401 },
+      );
+    }
     const loginUrl = new URL("/login", request.url);
     loginUrl.searchParams.set("redirect", pathname);
     return NextResponse.redirect(loginUrl);

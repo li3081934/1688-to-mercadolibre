@@ -195,6 +195,7 @@ export default function PublishPage() {
   const [catSearch, setCatSearch] = useState("");
   const [catResults, setCatResults] = useState<PredictedCategory[]>([]);
   const [catSearchLoading, setCatSearchLoading] = useState(false);
+  const [recommendingCategory, setRecommendingCategory] = useState(false);
   const [categoryAttrs, setCategoryAttrs] = useState<CategoryAttr[]>([]);
   const [loadingAttrs, setLoadingAttrs] = useState(false);
   const [skuOverrides, setSkuOverrides] = useState<
@@ -364,12 +365,12 @@ export default function PublishPage() {
     }
   }, [catSearch]);
 
-  const fetchAttributes = useCallback(async () => {
-    if (!mlCategoryId) return;
+  const loadAttributes = useCallback(async (categoryId: string) => {
+    if (!categoryId) return;
     setLoadingAttrs(true);
     try {
       const res = await fetch(
-        `/api/mercadolibre/categories/${mlCategoryId}/attributes`,
+        `/api/mercadolibre/categories/${categoryId}/attributes`,
       );
       const data = await res.json();
       if (data.success) {
@@ -418,7 +419,48 @@ export default function PublishPage() {
     } finally {
       setLoadingAttrs(false);
     }
-  }, [mlCategoryId]);
+  }, []);
+
+  const fetchAttributes = useCallback(async () => {
+    await loadAttributes(mlCategoryId);
+  }, [loadAttributes, mlCategoryId]);
+
+  const recommendCategory = useCallback(async () => {
+    const title = bundle?.mainProduct?.product?.title || product?.title || "";
+    if (!title.trim()) {
+      toast.error("当前商品没有标题，无法推荐分类。");
+      return;
+    }
+    setRecommendingCategory(true);
+    try {
+      const response = await fetch("/api/ai-models/recommend-category", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title }),
+      });
+      const result = await response.json();
+      if (!response.ok || !result.success) {
+        throw new Error(result.message || "AI 推荐分类失败。");
+      }
+      const data = result.data as {
+        categoryId: string;
+        displayName: string;
+        pathFromRoot: Array<{ id: string; name: string }>;
+      };
+      const path = data.pathFromRoot.map((item) => item.name).join(" > ");
+      setMlCategoryId(data.categoryId);
+      setSelectedCategoryName(path || data.displayName);
+      setCatResults([]);
+      setCatSearch("");
+      setCategoryAttrs([]);
+      toast.success(`AI 已推荐分类：${path || data.displayName}`);
+      await loadAttributes(data.categoryId);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "AI 推荐分类失败。");
+    } finally {
+      setRecommendingCategory(false);
+    }
+  }, [bundle, loadAttributes, product]);
 
   const [aiFilling, setAiFilling] = useState(false);
 
@@ -1041,7 +1083,20 @@ export default function PublishPage() {
                       >
                         查询
                       </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={recommendCategory}
+                        disabled={recommendingCategory}
+                      >
+                        {recommendingCategory ? "推荐中..." : "AI 推荐分类"}
+                      </Button>
                     </div>
+                    {recommendingCategory ? (
+                      <p className="text-sm text-muted-foreground">
+                        AI 正在根据商品标题逐级分析 CBT 分类...
+                      </p>
+                    ) : null}
                     {catSearchLoading ? (
                       <p className="text-sm text-muted-foreground">
                         翻译并搜索中...

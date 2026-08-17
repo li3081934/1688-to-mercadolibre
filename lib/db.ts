@@ -113,6 +113,24 @@ function openDatabase() {
       UNIQUE(sourceLocale, targetLocale, sourceText, context, version)
     );
 
+    CREATE TABLE IF NOT EXISTS ml_categories (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      siteId TEXT NOT NULL,
+      categoryId TEXT NOT NULL,
+      parentCategoryId TEXT,
+      name TEXT NOT NULL,
+      displayName TEXT NOT NULL,
+      pathFromRoot TEXT NOT NULL DEFAULT '[]',
+      hasChildren INTEGER NOT NULL DEFAULT 0,
+      sortOrder INTEGER NOT NULL DEFAULT 0,
+      syncedAt TEXT NOT NULL,
+      createdAt TEXT NOT NULL,
+      updatedAt TEXT NOT NULL,
+      UNIQUE(siteId, categoryId)
+    );
+    CREATE INDEX IF NOT EXISTS idx_ml_categories_parent
+      ON ml_categories(siteId, parentCategoryId, sortOrder);
+
   `);
 
   try {
@@ -206,6 +224,125 @@ function openDatabase() {
 
 function getDb() {
   return openDatabase();
+}
+
+export type MLCategoryRecord = {
+  siteId: string;
+  categoryId: string;
+  parentCategoryId: string | null;
+  name: string;
+  displayName: string;
+  pathFromRoot: Array<{ id: string; name: string }>;
+  hasChildren: boolean;
+  sortOrder: number;
+  syncedAt: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+type MLCategoryRow = Omit<MLCategoryRecord, "pathFromRoot" | "hasChildren"> & {
+  pathFromRoot: string;
+  hasChildren: number;
+};
+
+function mapMLCategoryRow(row: MLCategoryRow): MLCategoryRecord {
+  return {
+    ...row,
+    pathFromRoot: JSON.parse(row.pathFromRoot) as MLCategoryRecord["pathFromRoot"],
+    hasChildren: Boolean(row.hasChildren),
+  };
+}
+
+export function listMLCategoryRoots(siteId: string) {
+  const rows = getDb()
+    .prepare(
+      `SELECT siteId, categoryId, parentCategoryId, name, displayName,
+              pathFromRoot, hasChildren, sortOrder, syncedAt, createdAt, updatedAt
+       FROM ml_categories
+       WHERE siteId = ? AND parentCategoryId IS NULL
+       ORDER BY sortOrder ASC, displayName COLLATE NOCASE ASC`
+    )
+    .all(siteId) as MLCategoryRow[];
+  return rows.map(mapMLCategoryRow);
+}
+
+export function listMLCategories(siteId: string) {
+  const rows = getDb()
+    .prepare(
+      `SELECT siteId, categoryId, parentCategoryId, name, displayName,
+              pathFromRoot, hasChildren, sortOrder, syncedAt, createdAt, updatedAt
+       FROM ml_categories
+       WHERE siteId = ?
+       ORDER BY pathFromRoot ASC, sortOrder ASC, displayName COLLATE NOCASE ASC`
+    )
+    .all(siteId) as MLCategoryRow[];
+  return rows.map(mapMLCategoryRow);
+}
+
+export function listMLCategoryChildren(siteId: string, parentCategoryId: string) {
+  const rows = getDb()
+    .prepare(
+      `SELECT siteId, categoryId, parentCategoryId, name, displayName,
+              pathFromRoot, hasChildren, sortOrder, syncedAt, createdAt, updatedAt
+       FROM ml_categories
+       WHERE siteId = ? AND parentCategoryId = ?
+       ORDER BY sortOrder ASC, displayName COLLATE NOCASE ASC`
+    )
+    .all(siteId, parentCategoryId) as MLCategoryRow[];
+  return rows.map(mapMLCategoryRow);
+}
+
+export function getMLCategorySyncStatus(siteId: string) {
+  return getDb()
+    .prepare(
+      `SELECT COUNT(*) as total, MAX(syncedAt) as syncedAt
+       FROM ml_categories WHERE siteId = ?`
+    )
+    .get(siteId) as { total: number; syncedAt: string | null };
+}
+
+export function upsertMLCategories(categories: MLCategoryRecord[]) {
+  if (categories.length === 0) return;
+  const db = getDb();
+  const statement = db.prepare(
+    `INSERT INTO ml_categories (
+       siteId, categoryId, parentCategoryId, name, displayName, pathFromRoot,
+       hasChildren, sortOrder, syncedAt, createdAt, updatedAt
+     ) VALUES (
+       @siteId, @categoryId, @parentCategoryId, @name, @displayName, @pathFromRoot,
+       @hasChildren, @sortOrder, @syncedAt, @createdAt, @updatedAt
+     ) ON CONFLICT(siteId, categoryId) DO UPDATE SET
+       parentCategoryId = excluded.parentCategoryId,
+       name = excluded.name,
+       displayName = excluded.displayName,
+       pathFromRoot = excluded.pathFromRoot,
+       hasChildren = excluded.hasChildren,
+       sortOrder = excluded.sortOrder,
+       syncedAt = excluded.syncedAt,
+       updatedAt = excluded.updatedAt`
+  );
+  const insertMany = db.transaction((items: MLCategoryRecord[]) => {
+    for (const category of items) {
+      statement.run({
+        ...category,
+        pathFromRoot: JSON.stringify(category.pathFromRoot),
+        hasChildren: category.hasChildren ? 1 : 0,
+      });
+    }
+  });
+  insertMany(categories);
+}
+
+export function pruneMLCategories(siteId: string, seenCategoryIds: string[]) {
+  if (seenCategoryIds.length === 0) return 0;
+  const placeholders = seenCategoryIds.map(() => "?").join(", ");
+  const result = getDb()
+    .prepare(
+      `DELETE FROM ml_categories
+       WHERE siteId = ? AND categoryId NOT IN (${placeholders})`
+    )
+    .run(siteId, ...seenCategoryIds);
+  return result.changes;
 }
 
 export type TranslationCacheRecord = {

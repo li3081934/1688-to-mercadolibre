@@ -62,6 +62,36 @@ export async function getCategories(siteId: string, accessToken: string): Promis
 }
 
 /**
+ * 获取站点完整分类树。官方接口返回 gzip 压缩 JSON，fetch 会自动解压。
+ */
+export async function getCategoryDump(siteId: string, accessToken: string): Promise<MLCategory[]> {
+  const data = await mlFetch(`/sites/${siteId}/categories/all`, accessToken, { timeout: 120000 });
+  if (Array.isArray(data)) return data as MLCategory[];
+  if (data && typeof data === "object") {
+    const payload = data as Record<string, unknown>;
+    if (Array.isArray(payload.categories)) {
+      return payload.categories as MLCategory[];
+    }
+    if (payload.categories && typeof payload.categories === "object") {
+      const categories = Object.values(payload.categories);
+      if (categories.every((item) => item && typeof item === "object" && "id" in item && "name" in item)) {
+        return categories as MLCategory[];
+      }
+    }
+    if ("id" in payload && typeof payload.id === "string" && typeof payload.name === "string") {
+      return [payload as unknown as MLCategory];
+    }
+    const categories = Object.values(payload);
+    if (categories.length > 0 && categories.every((item) => item && typeof item === "object" && "id" in item && "name" in item)) {
+      return categories as MLCategory[];
+    }
+  }
+  const sample = typeof data === "string" ? data.slice(0, 200) : JSON.stringify(data).slice(0, 500);
+  console.error(`[ml-client] category dump unsupported shape: ${sample}`);
+  throw new Error("美客多分类 dump 响应格式异常");
+}
+
+/**
  * 获取分类详情（含子分类）
  */
 export async function getCategoryDetail(categoryId: string, accessToken: string): Promise<MLCategory> {

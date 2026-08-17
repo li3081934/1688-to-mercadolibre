@@ -12,6 +12,7 @@ import {
   Brain,
   Languages,
   LogOut,
+  ListTree,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -37,6 +38,11 @@ const NAV_ITEMS: Array<{
     href: "/translation-cache",
     label: "翻译缓存",
     icon: <Languages className="h-4 w-4" />,
+  },
+  {
+    href: "/categories",
+    label: "分类管理",
+    icon: <ListTree className="h-4 w-4" />,
   },
 ];
 
