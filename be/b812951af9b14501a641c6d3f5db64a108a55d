@@ -1,0 +1,60 @@
+components/sidebar.tsx
+  s_a2e3be6f44028a::t_7d2d9f5dc8c434 15,42-46
+app/products/[id]/publish/page.tsx
+  s_a2e3be6f44028a::t_90f41aa2808c6a 1086-1093,1095-1099
+  s_a2e3be6f44028a::t_d3aedac4e2cc4e 198,368-369,373,422-463
+components/category-tree.tsx
+  h_04504ebe54ce64 1-63
+app/api/mercadolibre/categories/sync/route.ts
+  h_04504ebe54ce64 1-7,9-10,12-13,15-23
+  s_a2e3be6f44028a::t_df433d3e8772d4 8,11,14
+lib/mercadolibre/categories.ts
+  h_04504ebe54ce64 1-63,65,67-86,88,92,97,101-109,112,114-115,117-122,124-132,134-140
+  s_a2e3be6f44028a::t_df433d3e8772d4 64,66,87,89-91,93-96,98-100,110-111,113,116,133
+  s_a2e3be6f44028a::t_c474f1ea1c1442 123
+app/api/mercadolibre/categories/local/route.ts
+  s_a2e3be6f44028a::t_90f41aa2808c6a 5,7
+  s_a2e3be6f44028a::t_ce87d58fc5102a 6,16-21
+  h_04504ebe54ce64 1-4,8-15,22-30
+lib/mercadolibre/types.ts
+  s_a2e3be6f44028a::t_19f7235b9a1eb0 36-43
+app/categories/page.tsx
+  s_a2e3be6f44028a::t_ce87d58fc5102a 52
+  s_a2e3be6f44028a::t_f3ee458124a60d 78-81,83
+  h_04504ebe54ce64 1-46,48-51,53-69,73,82,84-85,87-88,94,96-114,116-134
+  s_a2e3be6f44028a::t_df433d3e8772d4 47,70-72,74-77,86,89-93,95,115
+app/api/ai-models/recommend-category/route.ts
+  h_04504ebe54ce64 1-104,111-122,124-138
+  s_a2e3be6f44028a::t_3eda0c54ab58e1 105-110,123
+middleware.ts
+  s_a2e3be6f44028a::t_f3ee458124a60d 19-24
+lib/db.ts
+  s_a2e3be6f44028a::t_2e7eaca0f43cb7 116-133,229-268,282-347
+  s_a2e3be6f44028a::t_93e449f56d690e 269-281
+lib/mercadolibre/client.ts
+  s_a2e3be6f44028a::t_19f7235b9a1eb0 64-69,88,91-93
+  s_a2e3be6f44028a::t_06087d6cc3162a 70-87,89-90
+app/ai-models/page.tsx
+  s_a2e3be6f44028a::t_b0c9b812388156 71,74-80,142,326,441-443
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "beb812951af9b14501a641c6d3f5db64a108a55d",
+  "prompts": {},
+  "humans": {
+    "h_04504ebe54ce64": {
+      "author": "lijs8 <lijs8@lenovo.com>"
+    }
+  },
+  "sessions": {
+    "s_a2e3be6f44028a": {
+      "agent_id": {
+        "tool": "github-copilot",
+        "id": "9db74d52-8fc2-4342-b501-9e833e051df4",
+        "model": "copilot/gpt-5.6-luna"
+      },
+      "human_author": "lijs8 <lijs8@lenovo.com>"
+    }
+  }
+}
