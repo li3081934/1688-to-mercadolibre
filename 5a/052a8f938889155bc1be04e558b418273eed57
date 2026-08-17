@@ -1,0 +1,28 @@
+app/published-products/published-products-list.tsx
+  s_09b0c91f68703c::t_3e43e636233416 5,119
+  h_04504ebe54ce64 1-4,6-118,120-148,150-237
+  s_09b0c91f68703c::t_af72ed7afccd21 149
+app/published-products/page.tsx
+  s_09b0c91f68703c::t_a38004b445f83c 1,3-4
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "5a052a8f938889155bc1be04e558b418273eed57",
+  "prompts": {},
+  "humans": {
+    "h_04504ebe54ce64": {
+      "author": "lijs8 <lijs8@lenovo.com>"
+    }
+  },
+  "sessions": {
+    "s_09b0c91f68703c": {
+      "agent_id": {
+        "tool": "github-copilot",
+        "id": "6b7c13ad-4366-41b9-8f26-2e83ca8fca9e",
+        "model": "copilot/gpt-5.6-luna"
+      },
+      "human_author": "lijs8 <lijs8@lenovo.com>"
+    }
+  }
+}
