@@ -39,6 +39,7 @@ function openDatabase() {
       lastError TEXT,
       lastExportedAt TEXT,
       mlItemId TEXT DEFAULT NULL,
+      mlCategoryId TEXT DEFAULT NULL,
       createdAt TEXT NOT NULL,
       updatedAt TEXT NOT NULL
     );
@@ -122,6 +123,8 @@ function openDatabase() {
       displayName TEXT NOT NULL,
       pathFromRoot TEXT NOT NULL DEFAULT '[]',
       hasChildren INTEGER NOT NULL DEFAULT 0,
+      status TEXT,
+      listingAllowed INTEGER,
       sortOrder INTEGER NOT NULL DEFAULT 0,
       syncedAt TEXT NOT NULL,
       createdAt TEXT NOT NULL,
@@ -135,6 +138,24 @@ function openDatabase() {
 
   try {
     database.exec(`ALTER TABLE products ADD COLUMN mlItemId TEXT DEFAULT NULL`);
+  } catch {
+
+  }
+
+  try {
+    database.exec(`ALTER TABLE products ADD COLUMN mlCategoryId TEXT DEFAULT NULL`);
+  } catch {
+
+  }
+
+  try {
+    database.exec(`ALTER TABLE ml_categories ADD COLUMN status TEXT`);
+  } catch {
+
+  }
+
+  try {
+    database.exec(`ALTER TABLE ml_categories ADD COLUMN listingAllowed INTEGER`);
   } catch {
 
   }
@@ -234,6 +255,8 @@ export type MLCategoryRecord = {
   displayName: string;
   pathFromRoot: Array<{ id: string; name: string }>;
   hasChildren: boolean;
+  status: string | null;
+  listingAllowed: boolean | null;
   sortOrder: number;
   syncedAt: string;
   createdAt: string;
@@ -243,6 +266,7 @@ export type MLCategoryRecord = {
 type MLCategoryRow = Omit<MLCategoryRecord, "pathFromRoot" | "hasChildren"> & {
   pathFromRoot: string;
   hasChildren: number;
+  listingAllowed: number | null;
 };
 
 function mapMLCategoryRow(row: MLCategoryRow): MLCategoryRecord {
@@ -250,45 +274,88 @@ function mapMLCategoryRow(row: MLCategoryRow): MLCategoryRecord {
     ...row,
     pathFromRoot: JSON.parse(row.pathFromRoot) as MLCategoryRecord["pathFromRoot"],
     hasChildren: Boolean(row.hasChildren),
+    listingAllowed: row.listingAllowed === null ? null : Boolean(row.listingAllowed),
   };
 }
 
-export function listMLCategoryRoots(siteId: string) {
+export type MLCategoryFilters = {
+  status?: string;
+};
+
+function categoryFilterSql(filters?: MLCategoryFilters) {
+  return filters?.status
+    ? { sql: " AND (status = ? OR status IS NULL)", params: [filters.status] }
+    : { sql: "", params: [] as string[] };
+}
+
+export function listMLCategoryRoots(siteId: string, filters?: MLCategoryFilters) {
+  const filter = categoryFilterSql(filters);
   const rows = getDb()
     .prepare(
       `SELECT siteId, categoryId, parentCategoryId, name, displayName,
-              pathFromRoot, hasChildren, sortOrder, syncedAt, createdAt, updatedAt
+                pathFromRoot, hasChildren, status, listingAllowed, sortOrder, syncedAt, createdAt, updatedAt
        FROM ml_categories
-       WHERE siteId = ? AND parentCategoryId IS NULL
+           WHERE siteId = ? AND parentCategoryId IS NULL${filter.sql}
        ORDER BY sortOrder ASC, displayName COLLATE NOCASE ASC`
     )
-    .all(siteId) as MLCategoryRow[];
+         .all(siteId, ...filter.params) as MLCategoryRow[];
   return rows.map(mapMLCategoryRow);
 }
 
-export function listMLCategories(siteId: string) {
+export function listMLCategories(siteId: string, filters?: MLCategoryFilters) {
+  const filter = categoryFilterSql(filters);
   const rows = getDb()
     .prepare(
       `SELECT siteId, categoryId, parentCategoryId, name, displayName,
-              pathFromRoot, hasChildren, sortOrder, syncedAt, createdAt, updatedAt
+                pathFromRoot, hasChildren, status, listingAllowed, sortOrder, syncedAt, createdAt, updatedAt
        FROM ml_categories
-       WHERE siteId = ?
+           WHERE siteId = ?${filter.sql}
        ORDER BY pathFromRoot ASC, sortOrder ASC, displayName COLLATE NOCASE ASC`
     )
-    .all(siteId) as MLCategoryRow[];
+         .all(siteId, ...filter.params) as MLCategoryRow[];
   return rows.map(mapMLCategoryRow);
 }
 
-export function listMLCategoryChildren(siteId: string, parentCategoryId: string) {
+export function getMLCategory(siteId: string, categoryId: string) {
+  const db = getDb();
+  const selectCategory = db.prepare(
+    `SELECT siteId, categoryId, parentCategoryId, name, displayName,
+            pathFromRoot, hasChildren, status, listingAllowed, sortOrder, syncedAt, createdAt, updatedAt
+     FROM ml_categories
+     WHERE siteId = ? AND categoryId = ?`,
+  );
+  const row = selectCategory.get(siteId, categoryId) as MLCategoryRow | undefined;
+  if (!row) return undefined;
+
+  const category = mapMLCategoryRow(row);
+  const path: Array<{ id: string; name: string }> = [];
+  const visited = new Set<string>();
+  let current: MLCategoryRecord | undefined = category;
+  while (current && !visited.has(current.categoryId)) {
+    visited.add(current.categoryId);
+    path.unshift({ id: current.categoryId, name: current.name });
+    current = current.parentCategoryId
+      ? (() => {
+          const parentRow = selectCategory.get(siteId, current?.parentCategoryId) as MLCategoryRow | undefined;
+          return parentRow ? mapMLCategoryRow(parentRow) : undefined;
+        })()
+      : undefined;
+  }
+
+  return { ...category, pathFromRoot: path };
+}
+
+export function listMLCategoryChildren(siteId: string, parentCategoryId: string, filters?: MLCategoryFilters) {
+  const filter = categoryFilterSql(filters);
   const rows = getDb()
     .prepare(
       `SELECT siteId, categoryId, parentCategoryId, name, displayName,
-              pathFromRoot, hasChildren, sortOrder, syncedAt, createdAt, updatedAt
+                pathFromRoot, hasChildren, status, listingAllowed, sortOrder, syncedAt, createdAt, updatedAt
        FROM ml_categories
-       WHERE siteId = ? AND parentCategoryId = ?
+           WHERE siteId = ? AND parentCategoryId = ?${filter.sql}
        ORDER BY sortOrder ASC, displayName COLLATE NOCASE ASC`
     )
-    .all(siteId, parentCategoryId) as MLCategoryRow[];
+         .all(siteId, parentCategoryId, ...filter.params) as MLCategoryRow[];
   return rows.map(mapMLCategoryRow);
 }
 
@@ -307,16 +374,18 @@ export function upsertMLCategories(categories: MLCategoryRecord[]) {
   const statement = db.prepare(
     `INSERT INTO ml_categories (
        siteId, categoryId, parentCategoryId, name, displayName, pathFromRoot,
-       hasChildren, sortOrder, syncedAt, createdAt, updatedAt
+       hasChildren, status, listingAllowed, sortOrder, syncedAt, createdAt, updatedAt
      ) VALUES (
        @siteId, @categoryId, @parentCategoryId, @name, @displayName, @pathFromRoot,
-       @hasChildren, @sortOrder, @syncedAt, @createdAt, @updatedAt
+       @hasChildren, @status, @listingAllowed, @sortOrder, @syncedAt, @createdAt, @updatedAt
      ) ON CONFLICT(siteId, categoryId) DO UPDATE SET
        parentCategoryId = excluded.parentCategoryId,
        name = excluded.name,
        displayName = excluded.displayName,
        pathFromRoot = excluded.pathFromRoot,
        hasChildren = excluded.hasChildren,
+      status = excluded.status,
+      listingAllowed = excluded.listingAllowed,
        sortOrder = excluded.sortOrder,
        syncedAt = excluded.syncedAt,
        updatedAt = excluded.updatedAt`
@@ -327,6 +396,7 @@ export function upsertMLCategories(categories: MLCategoryRecord[]) {
         ...category,
         pathFromRoot: JSON.stringify(category.pathFromRoot),
         hasChildren: category.hasChildren ? 1 : 0,
+        listingAllowed: category.listingAllowed === null ? null : category.listingAllowed ? 1 : 0,
       });
     }
   });
@@ -478,7 +548,7 @@ export function listProducts() {
     .prepare(
       `SELECT id, title, offerId, zipPath, extractedDir, mainJsonPath,
               skuCount, isListed, status, lastError, lastExportedAt,
-              mlItemId, familyName, userProductId, familyId,
+              mlItemId, mlCategoryId, familyName, userProductId, familyId,
               parentUserProductId, publishModel, createdAt, updatedAt
        FROM products
        ORDER BY createdAt DESC`
@@ -491,7 +561,7 @@ export function getProductById(productId: string) {
     .prepare(
       `SELECT id, title, offerId, zipPath, extractedDir, mainJsonPath,
               skuCount, isListed, status, lastError, lastExportedAt,
-              mlItemId, familyName, userProductId, familyId,
+              mlItemId, mlCategoryId, familyName, userProductId, familyId,
               parentUserProductId, publishModel, createdAt, updatedAt
        FROM products
        WHERE id = ?`
@@ -502,8 +572,8 @@ export function getProductById(productId: string) {
 export function createProduct(product: ProductRecord) {
   getDb()
     .prepare(
-      `INSERT INTO products (id, title, offerId, zipPath, extractedDir, mainJsonPath, skuCount, isListed, status, lastError, lastExportedAt, mlItemId, familyName, userProductId, familyId, parentUserProductId, publishModel, createdAt, updatedAt)
-       VALUES (@id, @title, @offerId, @zipPath, @extractedDir, @mainJsonPath, @skuCount, @isListed, @status, @lastError, @lastExportedAt, @mlItemId, @familyName, @userProductId, @familyId, @parentUserProductId, @publishModel, @createdAt, @updatedAt)`
+      `INSERT INTO products (id, title, offerId, zipPath, extractedDir, mainJsonPath, skuCount, isListed, status, lastError, lastExportedAt, mlItemId, mlCategoryId, familyName, userProductId, familyId, parentUserProductId, publishModel, createdAt, updatedAt)
+       VALUES (@id, @title, @offerId, @zipPath, @extractedDir, @mainJsonPath, @skuCount, @isListed, @status, @lastError, @lastExportedAt, @mlItemId, @mlCategoryId, @familyName, @userProductId, @familyId, @parentUserProductId, @publishModel, @createdAt, @updatedAt)`
     )
     .run(product);
 }
@@ -537,6 +607,7 @@ export function updateProduct(productId: string, patch: Partial<Omit<ProductReco
            lastError = @lastError,
            lastExportedAt = @lastExportedAt,
            mlItemId = @mlItemId,
+           mlCategoryId = @mlCategoryId,
            familyName = @familyName,
            userProductId = @userProductId,
            familyId = @familyId,

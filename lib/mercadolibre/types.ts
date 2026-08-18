@@ -33,6 +33,12 @@ export type MLTestUserResponse = {
 export type MLCategory = {
   id: string;
   name: string;
+  settings?: {
+    status?: string;
+    listing_allowed?: boolean;
+  };
+  status?: string;
+  listing_allowed?: boolean;
   picture?: string | null;
   total_items_in_this_category?: number;
   children?: MLCategory[];

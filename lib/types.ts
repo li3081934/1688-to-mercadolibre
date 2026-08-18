@@ -98,6 +98,7 @@ export type ProductRecord = {
   lastError: string | null;
   lastExportedAt: string | null;
   mlItemId: string | null;
+  mlCategoryId: string | null;
   familyName: string | null;
   userProductId: string | null;
   familyId: string | null;

@@ -41,9 +41,40 @@ type PublishRequestBody = {
   skus?: SkuOverride[];
 };
 
+type MercadoLibreBatchError = {
+  message?: unknown;
+  error?: unknown;
+  status?: unknown;
+  cause?: unknown;
+};
+
+function formatMercadoLibreBatchError(value: unknown) {
+  if (!value || typeof value !== "object") return undefined;
+  const error = value as MercadoLibreBatchError;
+  const details = [
+    typeof error.error === "string" ? error.error : undefined,
+    typeof error.message === "string" ? error.message : undefined,
+    typeof error.status === "number" ? `HTTP ${error.status}` : undefined,
+    error.cause !== undefined ? `原因：${JSON.stringify(error.cause)}` : undefined,
+  ].filter(Boolean);
+  return details.length > 0 ? details.join("；") : JSON.stringify(value);
+}
+
+function syncProductCategory(productId: string, mlCategoryId: string) {
+  const product = getProductById(productId);
+  if (!product || product.mlCategoryId === mlCategoryId) return;
+  updateProduct(productId, { mlCategoryId });
+  console.info(
+    `[publish] synced product category product=${productId}, `
+      + `from=${product.mlCategoryId || "null"}, to=${mlCategoryId}`,
+  );
+}
+
 export async function POST(request: Request) {
+  let requestBody: PublishRequestBody | undefined;
   try {
     const body: PublishRequestBody = await request.json();
+    requestBody = body;
     const { productId, mlCategoryId, familyName: bodyFamilyName, description, skus = [] } = body;
 
     if (!productId || !mlCategoryId) {
@@ -205,21 +236,40 @@ export async function POST(request: Request) {
           token,
           pendingItems.map(({ itemPayload }) => itemPayload),
         );
+        console.info(
+          "[publish] Mercado Libre batch publish response:",
+          JSON.stringify(batchResults, null, 2),
+        );
       } catch (err) {
         batchError = err instanceof Error ? err.message : "批量 UP 刊登失败";
+        console.error("[publish] Mercado Libre batch publish error:", err);
       }
     }
 
     for (let index = 0; index < pendingItems.length; index += 1) {
       const { skuItem, generatedSku } = pendingItems[index];
       const createdItem = batchResults[index];
+      const topLevelError = formatMercadoLibreBatchError(createdItem);
       const siteResults = createdItem?.site_items || [];
       const successfulSiteItems = siteResults.filter((site) => site.item_id && !site.error);
       const siteErrors = siteResults
         .filter((site) => !site.item_id || site.error)
-        .map((site) => `[${site.site_id}] ${site.error?.error || site.error?.message || "接口未返回商品 ID"}`);
+        .map((site) => {
+          if (!site.error) {
+            return `[${site.site_id}] 接口未返回商品 ID`;
+          }
+          const details = [
+            site.error.error,
+            site.error.message,
+            site.error.status ? `HTTP ${site.error.status}` : undefined,
+            site.error.cause?.length ? `原因：${JSON.stringify(site.error.cause)}` : undefined,
+          ].filter(Boolean);
+          return `[${site.site_id}] ${[...new Set(details)].join("；")}`;
+        });
       const successful = successfulSiteItems.length > 0;
-      const publishError = batchError || (!createdItem ? "批量接口未返回该 SKU 的结果" : undefined);
+      const publishError = batchError
+        || topLevelError
+        || (!createdItem ? "批量接口未返回该 SKU 的结果" : undefined);
       results.push({
         skuKey: skuItem.key,
         skuLabel: skuItem.label,
@@ -304,5 +354,16 @@ export async function POST(request: Request) {
       { success: false, message },
       { status: 500 }
     );
+  } finally {
+    if (requestBody?.productId && requestBody.mlCategoryId) {
+      try {
+        syncProductCategory(requestBody.productId, requestBody.mlCategoryId);
+      } catch (error) {
+        console.error(
+          `[publish] failed to sync product category product=${requestBody.productId}`,
+          error,
+        );
+      }
+    }
   }
 }

@@ -21,6 +21,7 @@ import { Badge } from "@/components/ui/badge";
 import { DeleteProductButton } from "./delete-button";
 import { UploadForm } from "./upload-form";
 import { RefreshButton } from "./refresh-button";
+import { RecommendCategoryButton } from "./recommend-category-button";
 
 export const dynamic = "force-dynamic";
 
@@ -80,6 +81,9 @@ export default async function ProductsPage() {
                     </TableCell>
                     <TableCell>
                       <div>{product.skuCount} 个 SKU</div>
+                      <div className="text-xs text-muted-foreground">
+                        分类：{product.mlCategoryId || "未推荐"}
+                      </div>
                     </TableCell>
                     <TableCell>
                       <div className="flex flex-wrap gap-2">
@@ -95,7 +99,11 @@ export default async function ProductsPage() {
                               : "default"
                           }
                         >
-                          {product.status === "error" ? "导出异常" : "正常"}
+                          {product.status === "error"
+                            ? "导出异常"
+                            : product.status === "category_recommending"
+                              ? "分类推荐中"
+                              : "正常"}
                         </Badge>
                       </div>
                       {product.lastError ? (
@@ -107,6 +115,10 @@ export default async function ProductsPage() {
                     </TableCell>
                     <TableCell>
                       <div className="flex flex-wrap gap-2">
+                        <RecommendCategoryButton
+                          productId={product.id}
+                          recommending={product.status === "category_recommending"}
+                        />
                         <form
                           action={`/api/products/${product.id}/listed`}
                           method="post"
@@ -129,9 +141,15 @@ export default async function ProductsPage() {
                           </Button>
                         </form>
                         <DeleteProductButton productId={product.id} />
-                        <Link href={`/products/${product.id}/publish`}>
-                          <Button size="sm">上架到美客多</Button>
-                        </Link>
+                        {product.mlCategoryId ? (
+                          <Link href={`/products/${product.id}/publish`}>
+                            <Button size="sm">上架到美客多</Button>
+                          </Link>
+                        ) : (
+                          <Button size="sm" disabled title="请先使用商品标题推荐分类">
+                            上架到美客多
+                          </Button>
+                        )}
                       </div>
                       {product.lastExportedAt ? (
                         <div className="mt-1 text-xs text-muted-foreground">

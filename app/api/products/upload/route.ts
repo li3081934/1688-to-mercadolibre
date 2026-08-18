@@ -6,6 +6,7 @@ import { createProduct } from "@/lib/db";
 import { parseProductBundle } from "@/lib/products";
 import { getProductDir, removeDirectory, replaceFormFile } from "@/lib/storage";
 import { extractZipArchive } from "@/lib/zip";
+import { recommendProductCategory } from "@/lib/mercadolibre/product-category-recommendation";
 
 export const runtime = "nodejs";
 
@@ -46,6 +47,7 @@ export async function POST(request: Request) {
       lastError: null,
       lastExportedAt: null,
       mlItemId: null,
+      mlCategoryId: null,
       familyName: null,
       userProductId: null,
       familyId: null,
@@ -53,6 +55,10 @@ export async function POST(request: Request) {
       publishModel: "classic",
       createdAt: now,
       updatedAt: now
+    });
+    console.info(`[category-recommendation] upload created product=${productId}, starting background task`);
+    void recommendProductCategory(productId).catch((error) => {
+      console.error(`[category-recommendation] product=${productId} background task failed`, error);
     });
 
     return NextResponse.json(

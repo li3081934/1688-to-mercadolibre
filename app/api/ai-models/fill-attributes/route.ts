@@ -131,6 +131,7 @@ Output ONLY a valid JSON object matching the schema. No explanation, no markdown
       };
       if (!fillModel.thinkingEnabled) {
         body.thinking = { type: "disabled" };
+        body.enable_thinking = false;
       }
       const res = await fetch(url, {
         method: "POST",

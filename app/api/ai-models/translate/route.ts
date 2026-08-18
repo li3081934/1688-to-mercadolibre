@@ -24,6 +24,5 @@ export async function POST(request: Request) {
     { role: "system", content: systemPrompt },
     { role: "user", content: text },
   ]);
-
   return NextResponse.json({ translated: result.content.trim() });
 }

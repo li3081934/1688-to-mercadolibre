@@ -13,6 +13,7 @@ export type AIChatMessage = {
 export type AIChatOptions = {
   maxTokens?: number;
   temperature?: number;
+  signal?: AbortSignal;
 };
 
 export type AIChatResponse = {
@@ -48,6 +49,8 @@ async function callOpenAI(
   };
   if (options.thinkingEnabled === false) {
     body.thinking = { type: "disabled" };
+    body.enable_thinking = false;
+    body.reasoning = {"effort": "none"}
   }
 
   const res = await fetch(url, {
@@ -57,6 +60,7 @@ async function callOpenAI(
       Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify(body),
+    signal: options.signal,
   });
 
   if (!res.ok) {
@@ -101,6 +105,7 @@ async function callAnthropic(
       "anthropic-version": "2023-06-01",
     },
     body: JSON.stringify(body),
+    signal: options.signal,
   });
 
   if (!res.ok) {

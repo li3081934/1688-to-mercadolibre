@@ -20,6 +20,8 @@ type CategoryNode = {
   pathFromRoot: Array<{ id: string; name: string }>;
   sortOrder: number;
   hasChildren: boolean;
+  status: string | null;
+  listingAllowed: boolean | null;
 };
 
 function childCategories(category: MLCategory) {
@@ -50,6 +52,8 @@ function flattenCategories(categories: MLCategory[]) {
         pathFromRoot: path,
         sortOrder,
         hasChildren: children.length > 0,
+        status: category.settings?.status || category.status || null,
+        listingAllowed: category.settings?.listing_allowed ?? category.listing_allowed ?? null,
       });
     }
     children.forEach((child, index) => {
@@ -123,6 +127,8 @@ export async function syncCBTCategories() {
     displayName: node.name,
     pathFromRoot: node.pathFromRoot,
     hasChildren: node.hasChildren,
+    status: node.status,
+    listingAllowed: node.listingAllowed,
     sortOrder: node.sortOrder,
     syncedAt: now,
     createdAt: now,

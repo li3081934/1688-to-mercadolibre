@@ -82,6 +82,7 @@ type ProductData = {
   skuCount: number;
   isListed: number;
   mlItemId: string | null;
+  mlCategoryId: string | null;
   status: string;
   lastError: string | null;
 };
@@ -132,9 +133,23 @@ type PredictedCategory = {
   attributes?: Array<{ id: string; value_id?: string; value_name: string }>;
 };
 
+type LocalCategory = {
+  categoryId: string;
+  parentCategoryId: string | null;
+  name: string;
+  displayName: string;
+  hasChildren: boolean;
+  status: string | null;
+  listingAllowed: boolean | null;
+};
+
 function bilingualText(displayText: string | undefined, sourceText: string) {
   if (!displayText || displayText === sourceText) return sourceText;
   return `${displayText}（${sourceText}）`;
+}
+
+function localCategoryLabel(category: LocalCategory) {
+  return bilingualText(category.displayName, category.name);
 }
 
 type PublishResult = {
@@ -196,6 +211,9 @@ export default function PublishPage() {
   const [catResults, setCatResults] = useState<PredictedCategory[]>([]);
   const [catSearchLoading, setCatSearchLoading] = useState(false);
   const [recommendingCategory, setRecommendingCategory] = useState(false);
+  const [categoryLevels, setCategoryLevels] = useState<LocalCategory[][]>([]);
+  const [selectedCategoryLevels, setSelectedCategoryLevels] = useState<string[]>([]);
+  const [categoryLoadingLevel, setCategoryLoadingLevel] = useState<number | null>(null);
   const [categoryAttrs, setCategoryAttrs] = useState<CategoryAttr[]>([]);
   const [loadingAttrs, setLoadingAttrs] = useState(false);
   const [skuOverrides, setSkuOverrides] = useState<
@@ -255,6 +273,8 @@ export default function PublishPage() {
         }
         setProduct(prodData);
         setBundle(bundleData);
+        setMlCategoryId(prodData.mlCategoryId || "");
+        setSelectedCategoryName(prodData.mlCategoryId || "");
 
         const overrides: Record<string, SkuOverride> = {};
         const baseTitle =
@@ -424,6 +444,81 @@ export default function PublishPage() {
   const fetchAttributes = useCallback(async () => {
     await loadAttributes(mlCategoryId);
   }, [loadAttributes, mlCategoryId]);
+
+  useEffect(() => {
+    if (!product?.mlCategoryId) return;
+    const categoryId = product.mlCategoryId;
+    void loadAttributes(categoryId);
+    fetch(`/api/mercadolibre/categories/local?categoryId=${encodeURIComponent(categoryId)}`)
+      .then((response) => response.json())
+      .then((data) => {
+        const category = data.data?.[0] as { pathFromRoot?: Array<{ name: string }> } | undefined;
+        const path = category?.pathFromRoot?.map((item) => item.name).join(" > ");
+        if (path) setSelectedCategoryName(path);
+      })
+      .catch(() => {});
+  }, [loadAttributes, product]);
+
+  const loadCategoryLevel = useCallback(async (parentId: string | null, level: number) => {
+    console.info(`[category-cascade] loading level=${level + 1} parentId=${parentId || "ROOT"}`);
+    setCategoryLoadingLevel(level);
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 15000);
+    try {
+      const query = new URLSearchParams({ status: "enabled" });
+      if (parentId) query.set("parentId", parentId);
+      const response = await fetch(`/api/mercadolibre/categories/local?${query}`, {
+        signal: controller.signal,
+      });
+      const data = await response.json();
+      console.info(`[category-cascade] response level=${level + 1} parentId=${parentId || "ROOT"} ok=${response.ok} rows=${Array.isArray(data.data) ? data.data.length : "invalid"}`);
+      if (!response.ok || !data.success) {
+        throw new Error(data.message || "获取分类失败。");
+      }
+      setCategoryLevels((previous) => [...previous.slice(0, level), data.data as LocalCategory[]]);
+      console.info(`[category-cascade] applied level=${level + 1} rows=${data.data.length}`);
+    } catch (error) {
+      console.error(`[category-cascade] failed level=${level + 1} parentId=${parentId || "ROOT"}`, error);
+      toast.error(error instanceof DOMException && error.name === "AbortError" ? "获取分类超时，请稍后重试。" : error instanceof Error ? error.message : "获取分类失败。");
+    } finally {
+      window.clearTimeout(timeout);
+      setCategoryLoadingLevel(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!mlCategoryId) void loadCategoryLevel(null, 0);
+  }, [loadCategoryLevel, mlCategoryId]);
+
+  const selectLocalCategory = useCallback((category: LocalCategory, level: number) => {
+    console.info(`[category-cascade] selected level=${level + 1} categoryId=${category.categoryId} hasChildren=${category.hasChildren} listingAllowed=${category.listingAllowed}`);
+    const nextSelected = [...selectedCategoryLevels.slice(0, level), category.categoryId];
+    setSelectedCategoryLevels(nextSelected);
+    setCategoryLevels((previous) => previous.slice(0, level + 1));
+    setCatResults([]);
+    setCatSearch("");
+    setCategoryAttrs([]);
+    setMlCategoryId("");
+    setSelectedCategoryName("");
+    if (category.hasChildren) {
+      void loadCategoryLevel(category.categoryId, level + 1);
+      return;
+    }
+    if (category.listingAllowed === false) {
+      toast.error("该分类当前不可刊登，请选择其他分类。");
+      return;
+    }
+    setMlCategoryId(category.categoryId);
+    setSelectedCategoryName(
+      nextSelected.map((id, index) => {
+        const item = index === level
+          ? category
+          : categoryLevels[index]?.find((entry) => entry.categoryId === id);
+        return item ? localCategoryLabel(item) : id;
+      }).join(" > "),
+    );
+    void loadAttributes(category.categoryId);
+  }, [categoryLevels, loadAttributes, loadCategoryLevel, selectedCategoryLevels]);
 
   const recommendCategory = useCallback(async () => {
     const title = bundle?.mainProduct?.product?.title || product?.title || "";
@@ -1039,6 +1134,8 @@ export default function PublishPage() {
                           setMlCategoryId("");
                           setSelectedCategoryName("");
                           setCategoryAttrs([]);
+                          setSelectedCategoryLevels([]);
+                          setCategoryLevels([]);
                         }}
                         className="ml-3 underline underline-offset-2"
                       >
@@ -1063,6 +1160,51 @@ export default function PublishPage() {
                   </div>
                 ) : (
                   <div className="flex flex-col gap-3">
+                    {categoryLoadingLevel !== null ? (
+                      <div className="flex items-center gap-2 rounded-lg border border-dashed px-3 py-2 text-sm text-muted-foreground">
+                        <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                        正在加载第 {categoryLoadingLevel + 1} 级分类...
+                      </div>
+                    ) : null}
+                    {categoryLevels.length > 0 ? (
+                      <div className="flex flex-col gap-2 rounded-lg border bg-muted/20 p-3">
+                        <p className="text-sm font-medium">按分类目录选择</p>
+                        {categoryLevels.map((levelCategories, level) => (
+                          <Select
+                            key={level}
+                            value={selectedCategoryLevels[level] || ""}
+                            onValueChange={(value) => {
+                              const category = levelCategories.find((item) => item.categoryId === value);
+                              if (category) selectLocalCategory(category, level);
+                            }}
+                            disabled={categoryLoadingLevel === level}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder={categoryLoadingLevel === level ? "加载分类中..." : `选择第 ${level + 1} 级分类`} />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {levelCategories.map((category) => (
+                                <SelectItem
+                                  key={category.categoryId}
+                                  value={category.categoryId}
+                                  disabled={category.listingAllowed === false && !category.hasChildren}
+                                >
+                                  <span className="flex min-w-0 items-center gap-2">
+                                    {category.hasChildren ? (
+                                      <span className="shrink-0 text-base font-semibold leading-none text-primary" aria-label="有子分类">
+                                        +
+                                      </span>
+                                    ) : null}
+                                    <span className="truncate">{localCategoryLabel(category)}</span>
+                                    {category.listingAllowed === false && !category.hasChildren ? "（不可刊登）" : ""}
+                                  </span>
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        ))}
+                      </div>
+                    ) : null}
                     <div className="flex gap-2">
                       <Input
                         placeholder="输入分类关键词（中文）..."
@@ -1522,11 +1664,18 @@ export default function PublishPage() {
                   <div key={item.skuKey} className="border-b py-2 text-sm">
                     <div className="font-medium">{item.skuLabel}</div>
                     {item.success ? (
-                      <div className="text-green-600">
-                        发布成功：{item.mlItemId || "已完成"}
-                        {item.sitelessUserProductId ? `，UP: ${item.sitelessUserProductId}` : ""}
-                        {item.familyId ? `，Family: ${item.familyId}` : ""}
-                      </div>
+                      <>
+                        <div className="text-green-600">
+                          发布成功：{item.mlItemId || "已完成"}
+                          {item.sitelessUserProductId ? `，UP: ${item.sitelessUserProductId}` : ""}
+                          {item.familyId ? `，Family: ${item.familyId}` : ""}
+                        </div>
+                        {item.error ? (
+                          <div className="mt-1 break-all text-destructive">
+                            美客多部分失败：{item.error}
+                          </div>
+                        ) : null}
+                      </>
                     ) : (
                       <div className="break-all text-destructive">发布失败：{item.error || "未知错误"}</div>
                     )}
